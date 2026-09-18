@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-ml = ["scikit-learn>=1.5,<2"]
+ml = ["joblib>=1.4,<2", "scikit-learn>=1.5,<2"]
 dev = ["pytest>=8,<9"]
 
 [tool.setuptools.packages.find]

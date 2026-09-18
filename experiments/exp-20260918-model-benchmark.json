@@ -1,0 +1,55 @@
+{
+  "experiment_id": "exp-20260918-model-benchmark-001",
+  "dataset": "pulso-transmi-starter-v1",
+  "validation": {
+    "strategy": "temporal_holdout",
+    "training_window": "all observations before the final 7 days",
+    "validation_window": "final 7 days",
+    "horizons_minutes": [15, 30, 45, 60]
+  },
+  "metric_definition": {
+    "primary": "WAPE",
+    "wape": "sum(abs(actual - prediction)) / sum(actual)",
+    "accuracy": "100 * (1 - WAPE)",
+    "mae": "mean(abs(actual - prediction))"
+  },
+  "results_average_across_horizons": [
+    {
+      "model": "HistGradientBoostingRegressor",
+      "loss": "poisson",
+      "wape_percent": 12.743,
+      "accuracy_percent": 87.257,
+      "station_accuracy_percent": 87.116,
+      "mae": 46.218
+    },
+    {
+      "model": "CatBoostRegressor",
+      "loss": "MAE",
+      "wape_percent": 12.911,
+      "accuracy_percent": 87.089,
+      "station_accuracy_percent": 86.945,
+      "mae": 46.829
+    },
+    {
+      "model": "HistGradientBoostingRegressor",
+      "loss": "absolute_error",
+      "wape_percent": 12.962,
+      "accuracy_percent": 87.038,
+      "station_accuracy_percent": 86.912,
+      "mae": 47.014
+    },
+    {
+      "model": "baseline_lag_24h",
+      "loss": null,
+      "wape_percent": 20.997,
+      "accuracy_percent": 79.003,
+      "station_accuracy_percent": 77.896,
+      "mae": 76.156
+    }
+  ],
+  "selected_model": {
+    "model_version": "hgb-poisson-v1",
+    "artifact": "models/pulso_hgb_poisson.joblib",
+    "reason": "lowest average WAPE and best result at every evaluated horizon"
+  }
+}
