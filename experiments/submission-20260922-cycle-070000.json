@@ -1,0 +1,15 @@
+{
+  "cycle_id": "cyc_official-20260921_20260910T070000Z",
+  "model_version": "hgb-poisson-v1",
+  "prediction_count": 48,
+  "expected_predictions": 48,
+  "station_count": 12,
+  "horizons_minutes": [15, 30, 45, 60],
+  "status": "accepted",
+  "is_official": true,
+  "attempt": 1,
+  "submission_id": "sub_b600ece0341b4df2b1610f0c735b4508",
+  "received_at": "2026-09-22T17:34:00.931482+00:00",
+  "closes_at": "2026-09-22T17:58:38.187324+00:00",
+  "payload_hash": "sha256:7d3c718a5c489ad7ed77bf2fbc347c2af52a07e5e9388549bd3dc54eba362af9"
+}
