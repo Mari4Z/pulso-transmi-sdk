@@ -228,12 +228,12 @@ def main() -> None:
     package = joblib.load(MODEL_PATH)
     with httpx.Client(timeout=60, follow_redirects=True) as http_client:
         cycle = None
-        for attempt in range(5):
+        for attempt in range(25):
             cycle = get_current_cycle(base_url, api_key, http_client)
             if cycle is not None:
                 break
-            if attempt < 4:
-                print(f"no open forecast cycle; retrying in 60s ({attempt + 1}/4)")
+            if attempt < 24:
+                print(f"no open forecast cycle; retrying in 60s ({attempt + 1}/24)")
                 time.sleep(60)
         if cycle is None:
             print("no open forecast cycle")
