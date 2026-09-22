@@ -128,6 +128,9 @@ las dos plataformas reemplaza el repositorio ni GitHub Actions.
 Consulta [docs/student-project.md](docs/student-project.md) para el flujo completo
 y los entregables.
 
+La guía de envío de predicciones está en
+[docs/submissions.md](docs/submissions.md).
+
 ## Métrica
 
 La referencia actual es:
