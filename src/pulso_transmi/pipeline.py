@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import subprocess
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -226,7 +227,14 @@ def main() -> None:
     model_metadata = json.loads(METADATA_PATH.read_text(encoding="utf-8"))
     package = joblib.load(MODEL_PATH)
     with httpx.Client(timeout=60, follow_redirects=True) as http_client:
-        cycle = get_current_cycle(base_url, api_key, http_client)
+        cycle = None
+        for attempt in range(5):
+            cycle = get_current_cycle(base_url, api_key, http_client)
+            if cycle is not None:
+                break
+            if attempt < 4:
+                print(f"no open forecast cycle; retrying in 60s ({attempt + 1}/4)")
+                time.sleep(60)
         if cycle is None:
             print("no open forecast cycle")
             return
