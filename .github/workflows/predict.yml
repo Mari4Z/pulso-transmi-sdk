@@ -1,0 +1,44 @@
+name: pulso-transmi-predict
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: pulso-transmi-predict
+  cancel-in-progress: false
+
+jobs:
+  predict:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install package
+        run: python -m pip install -e ".[dev,ml]"
+
+      - name: Run tests
+        run: python -m pytest -q
+
+      - name: Synchronize, predict and submit
+        env:
+          PULSO_API_URL: ${{ vars.PULSO_API_URL }}
+          PULSO_API_KEY: ${{ secrets.PULSO_API_KEY }}
+        run: python -m pulso_transmi.pipeline
+
+      - name: Upload submission receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: submission-receipt-${{ github.run_id }}
+          path: artifacts/
+          if-no-files-found: ignore
