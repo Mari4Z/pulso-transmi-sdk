@@ -1,0 +1,36 @@
+name: pulso-transmi-pipeline
+
+on:
+  workflow_dispatch:
+  # Activa el schedule únicamente cuando el profesor publique la frecuencia.
+  # schedule:
+  #   - cron: "7 * * * *"
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Run tests
+        run: pytest -q
+
+      - name: Ingest, train and predict
+        env:
+          PULSO_API_URL: ${{ vars.PULSO_API_URL }}
+          PULSO_API_KEY: ${{ secrets.PULSO_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python -m src.pipeline
