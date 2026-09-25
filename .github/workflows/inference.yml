@@ -1,13 +1,13 @@
-name: Drift Monitor
+name: Model Inference
 
 on:
   schedule:
-    # Se ejecuta todos los días a la medianoche
-    - cron: '0 0 * * *'
+    # Se ejecuta en el minuto 15 de cada hora
+    - cron: '15 * * * *'
   workflow_dispatch:
 
 jobs:
-  check-drift:
+  run-inference:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout del repositorio
@@ -24,12 +24,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install .
-          pip install scipy
 
-      - name: Ejecutar Monitoreo de Drift
+      - name: Ejecutar Inferencia
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           PULSO_API_KEY: ${{ secrets.PULSO_API_KEY }}
         run: |
-          python src/drift_monitor.py
+          python src/inference.py
