@@ -32,7 +32,7 @@ jobs:
         id: drift
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           PULSO_API_KEY: ${{ secrets.PULSO_API_KEY }}
           PULSO_API_URL: ${{ vars.PULSO_API_URL }}
         run: python src/drift_monitor.py

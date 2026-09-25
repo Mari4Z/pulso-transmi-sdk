@@ -30,8 +30,7 @@ jobs:
       - name: Ejecutar colector (API -> Supabase)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           PULSO_API_KEY: ${{ secrets.PULSO_API_KEY }}
         run: |
           python src/collector.py
-

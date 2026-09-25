@@ -41,7 +41,7 @@ jobs:
           PULSO_API_URL: ${{ vars.PULSO_API_URL }}
           PULSO_API_KEY: ${{ secrets.PULSO_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           RETRAIN_TRIGGER: ${{ inputs.trigger || 'manual' }}
         run: python -m src.pipeline
 
