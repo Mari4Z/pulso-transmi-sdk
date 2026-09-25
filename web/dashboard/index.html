@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Accuracy Pulso TransMi</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f3f5f8;
+    --surface: #ffffff;
+    --surface-2: #eef1f6;
+    --ink: #12141c;
+    --ink-2: #52565f;
+    --muted: #868a94;
+    --border: rgba(18,20,28,0.12);
+    --hairline: #e2e5ec;
+    --accent: #2a78d6;
+    --good: #0ca30c;
+    --good-bg: rgba(12,163,12,0.10);
+    --serious: #ec835a;
+    --serious-bg: rgba(236,131,90,0.14);
+    --critical: #d03b3b;
+    --critical-bg: rgba(208,59,59,0.10);
+    --seq-400: #3987e5;
+    --seq-600: #184f95;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #0d0f13;
+      --surface: #15171d;
+      --surface-2: #1b1e25;
+      --ink: #f4f5f7;
+      --ink-2: #c4c7cf;
+      --muted: #8b8f99;
+      --border: rgba(255,255,255,0.14);
+      --hairline: #262a33;
+      --accent: #3987e5;
+      --good-bg: rgba(12,163,12,0.16);
+      --serious-bg: rgba(236,131,90,0.18);
+      --critical-bg: rgba(208,59,59,0.20);
+      --seq-400: #3987e5;
+      --seq-600: #9ec5f4;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums; }
+  .page {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: max(20px, env(safe-area-inset-top)) 20px max(40px, env(safe-area-inset-bottom));
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  header.top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 10px 20px;
+    border-bottom: 1px solid var(--hairline);
+    padding-bottom: 16px;
+  }
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 6px;
+  }
+  h1 { font-size: 24px; font-weight: 700; margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+  .top-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; text-align: right; }
+  .live-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: "IBM Plex Mono", monospace; font-size: 11.5px; color: var(--ink-2);
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 4px 10px;
+  }
+  .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--good); animation: pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
+  @media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } }
+  .refresh-btn {
+    font-family: "IBM Plex Sans", sans-serif; font-size: 12px; color: var(--ink-2);
+    background: transparent; border: 1px solid var(--border); border-radius: 6px;
+    padding: 4px 9px; cursor: pointer;
+  }
+  .refresh-btn:hover { background: var(--surface-2); }
+  .refresh-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  section { display: flex; flex-direction: column; gap: 10px; }
+  .section-title { font-size: 13px; font-weight: 600; color: var(--ink-2); margin: 0; }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  }
+  .banner {
+    display: flex; gap: 14px; align-items: flex-start;
+    padding: 16px 18px; border-left: 4px solid var(--stripe, var(--good));
+  }
+  .banner .badge {
+    flex: none; width: 30px; height: 30px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; background: var(--stripe-bg, var(--good-bg));
+  }
+  .banner .badge svg { width: 15px; height: 15px; }
+  .banner-title { font-weight: 600; font-size: 14.5px; }
+  .banner-desc { font-size: 13px; color: var(--ink-2); line-height: 1.5; max-width: 62ch; margin-top: 2px; }
+
+  .horizon-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+  .horizon-card { padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; }
+  .horizon-head { display: flex; justify-content: space-between; align-items: baseline; }
+  .horizon-label { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+  .horizon-n { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; color: var(--muted); }
+  .horizon-value { font-family: "IBM Plex Mono", monospace; font-size: 26px; font-weight: 600; letter-spacing: -0.01em; }
+  .horizon-sub { font-size: 12px; color: var(--ink-2); }
+  svg.spark { width: 100%; height: 34px; display: block; overflow: visible; margin-top: 2px; }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 640px) { .two-col { grid-template-columns: 1fr; } }
+  .info-card { padding: 16px 18px; display: flex; flex-direction: column; gap: 6px; }
+  .info-card h3 { font-size: 13px; font-weight: 600; margin: 0 0 2px; }
+  .kv { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; padding: 3px 0; border-bottom: 1px dashed var(--hairline); }
+  .kv:last-child { border-bottom: none; }
+  .kv .k { color: var(--muted); }
+  .kv .v { font-family: "IBM Plex Mono", monospace; color: var(--ink); text-align: right; }
+
+  .empty { padding: 28px 18px; text-align: center; color: var(--muted); font-size: 13px; }
+
+  footer { display: flex; flex-direction: column; gap: 8px; padding-top: 6px; border-top: 1px solid var(--hairline); }
+  footer p { font-size: 12px; color: var(--ink-2); line-height: 1.6; margin: 0; max-width: 70ch; }
+  footer .provenance { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="top">
+    <div>
+      <p class="eyebrow">accuracy en vivo &middot; modelo hgb-poisson</p>
+      <h1>Qué tan bien está prediciendo el modelo</h1>
+    </div>
+    <div class="top-meta">
+      <span class="live-chip"><span class="live-dot" id="live-dot"></span><span id="live-label">conectando…</span></span>
+      <button class="refresh-btn" id="refresh-btn" type="button">Actualizar ahora</button>
+    </div>
+  </header>
+
+  <section>
+    <div class="card banner" id="banner" hidden>
+      <div class="badge" id="banner-badge"></div>
+      <div>
+        <div class="banner-title" id="banner-title">—</div>
+        <div class="banner-desc" id="banner-desc">—</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="section-title">Accuracy por horizonte (1 &minus; WAPE, últimas mediciones)</p>
+    <div class="horizon-grid" id="horizon-grid">
+      <div class="card empty">Cargando…</div>
+    </div>
+  </section>
+
+  <section class="two-col">
+    <div class="card info-card">
+      <h3>Modelo activo</h3>
+      <div id="model-info"><div class="empty">Cargando…</div></div>
+    </div>
+    <div class="card info-card">
+      <h3>Última medición de drift</h3>
+      <div id="drift-info"><div class="empty">Cargando…</div></div>
+    </div>
+  </section>
+
+  <footer>
+    <p>
+      Cada hora, <span class="mono">accuracy_monitor.py</span> resuelve las predicciones cuyo horizonte ya pasó
+      contra la demanda real recolectada, y calcula accuracy = 1&nbsp;&minus;&nbsp;WAPE por horizonte
+      (15/30/45/60&nbsp;min). Esta página consulta Supabase directamente con la clave pública
+      (<span class="mono">anon</span>, solo lectura vía RLS) y se refresca sola cada 60&nbsp;s.
+    </p>
+    <p class="provenance" id="provenance">—</p>
+  </footer>
+
+</div>
+
+<script>
+(function () {
+  var SUPABASE_URL = "https://qwhutoyowncvtcvsnmmf.supabase.co";
+  var SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF3aHV0b3lvd25jdnRjdnNubW1mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk1ODgxODIsImV4cCI6MjEwNTE2NDE4Mn0.dy0rr0DOGBKeP5-iKOr7hluMshfSFqGJMM2-7doZKSc";
+  var HORIZONS = [15, 30, 45, 60];
+  var REFRESH_MS = 60000;
+
+  function rest(path) {
+    return fetch(SUPABASE_URL + "/rest/v1/" + path, {
+      headers: { apikey: SUPABASE_ANON_KEY, Authorization: "Bearer " + SUPABASE_ANON_KEY }
+    }).then(function (r) {
+      if (!r.ok) throw new Error("Supabase " + r.status + " on " + path);
+      return r.json();
+    });
+  }
+
+  var fmtDateTime = new Intl.DateTimeFormat("es-CO", {
+    day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "America/Bogota"
+  });
+  var fmtTime = new Intl.DateTimeFormat("es-CO", { hour: "2-digit", minute: "2-digit", timeZone: "America/Bogota" });
+  var fmtInt = new Intl.NumberFormat("es-CO");
+
+  function pct(v, digits) {
+    if (v === null || v === undefined || isNaN(v)) return "n/d";
+    return (v * 100).toFixed(digits === undefined ? 1 : digits) + "%";
+  }
+
+  function sparkline(values) {
+    if (values.length < 2) return "";
+    var W = 200, H = 34, pad = 3;
+    var min = Math.min.apply(null, values), max = Math.max.apply(null, values);
+    var range = Math.max(max - min, 0.01);
+    var step = (W - pad * 2) / (values.length - 1);
+    var pts = values.map(function (v, i) {
+      var x = pad + i * step;
+      var y = H - pad - ((v - min) / range) * (H - pad * 2);
+      return x.toFixed(1) + "," + y.toFixed(1);
+    });
+    var last = pts[pts.length - 1].split(",");
+    return '<svg class="spark" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" role="img" aria-hidden="true">' +
+      '<polyline points="' + pts.join(" ") + '" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '<circle cx="' + last[0] + '" cy="' + last[1] + '" r="2.4" fill="var(--accent)"/>' +
+      '</svg>';
+  }
+
+  function severity(row) {
+    if (!row || !row.drift_detected) return { key: "good", label: "Sin deriva significativa" };
+    var mag = Math.abs(row.mean_change_pct || 0);
+    if (mag >= 15) return { key: "critical", label: "Deriva severa" };
+    return { key: "serious", label: "Deriva moderada" };
+  }
+
+  var badgeIcons = {
+    good: '<svg viewBox="0 0 16 16" fill="none"><path d="M3 8.5l3 3 7-7" stroke="var(--good)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    serious: '<svg viewBox="0 0 16 16" fill="none"><path d="M8 5v4.2M8 11.4h.01" stroke="var(--serious)" stroke-width="1.8" stroke-linecap="round"/></svg>',
+    critical: '<svg viewBox="0 0 16 16" fill="none"><path d="M8 5v4.2M8 11.4h.01" stroke="var(--critical)" stroke-width="1.8" stroke-linecap="round"/></svg>'
+  };
+  var stripeVars = { good: ["--good", "--good-bg"], serious: ["--serious", "--serious-bg"], critical: ["--critical", "--critical-bg"] };
+
+  function renderHorizons(metrics) {
+    var grid = document.getElementById("horizon-grid");
+    var byHorizon = {};
+    HORIZONS.forEach(function (h) { byHorizon[h] = []; });
+    metrics.forEach(function (m) {
+      var match = /^accuracy_(\d+)min$/.exec(m.metric_name);
+      if (match) byHorizon[Number(match[1])].push(m);
+    });
+
+    var anyData = HORIZONS.some(function (h) { return byHorizon[h].length > 0; });
+    if (!anyData) {
+      grid.innerHTML = '<div class="card empty">Todavía no hay predicciones resueltas. En cuanto se cumpla un horizonte y el colector traiga la demanda real, aparece aquí (corre cada hora).</div>';
+      return;
+    }
+
+    grid.innerHTML = HORIZONS.map(function (h) {
+      var rows = byHorizon[h].slice().sort(function (a, b) { return new Date(a.calculated_at) - new Date(b.calculated_at); });
+      if (!rows.length) {
+        return '<div class="card horizon-card"><div class="horizon-label">' + h + ' min</div>' +
+          '<div class="horizon-value mono" style="color:var(--muted); font-size:15px;">sin datos aún</div></div>';
+      }
+      var latest = rows[rows.length - 1];
+      var values = rows.map(function (r) { return r.metric_value; });
+      var totalN = rows.length;
+      return '<div class="card horizon-card">' +
+        '<div class="horizon-head"><span class="horizon-label">' + h + ' min</span><span class="horizon-n">n=' + totalN + '</span></div>' +
+        '<div class="horizon-value">' + pct(latest.metric_value) + '</div>' +
+        '<div class="horizon-sub">último corte: ' + fmtDateTime.format(new Date(latest.calculated_at)) + '</div>' +
+        sparkline(values) +
+        '</div>';
+    }).join("");
+  }
+
+  function renderBanner(latestDrift) {
+    var banner = document.getElementById("banner");
+    if (!latestDrift) { banner.hidden = true; return; }
+    banner.hidden = false;
+    var sev = severity(latestDrift);
+    var vars = stripeVars[sev.key];
+    banner.style.setProperty("--stripe", "var(" + vars[0] + ")");
+    banner.style.setProperty("--stripe-bg", "var(" + vars[1] + ")");
+    document.getElementById("banner-badge").innerHTML = badgeIcons[sev.key];
+    document.getElementById("banner-title").textContent = sev.label + " en la demanda";
+    var change = latestDrift.mean_change_pct;
+    document.getElementById("banner-desc").textContent =
+      "La media reciente se movió " + (change >= 0 ? "+" : "") + change.toFixed(1) +
+      "% frente al histórico (p=" + latestDrift.p_value.toFixed(5) + "). Medido " +
+      fmtDateTime.format(new Date(latestDrift.measured_at)) + " (Bogotá).";
+  }
+
+  function renderModelInfo(model) {
+    var el = document.getElementById("model-info");
+    if (!model) { el.innerHTML = '<div class="empty">Sin modelo activo</div>'; return; }
+    var versionMatch = /@([^:@]+)$/.exec(model.artifact_uri || "");
+    var version = versionMatch ? versionMatch[1] : "—";
+    el.innerHTML =
+      '<div class="kv"><span class="k">Algoritmo</span><span class="v">' + model.algorithm + '</span></div>' +
+      '<div class="kv"><span class="k">Versión</span><span class="v">' + version + '</span></div>' +
+      '<div class="kv"><span class="k">Entrenado</span><span class="v">' + fmtDateTime.format(new Date(model.trained_at)) + '</span></div>' +
+      '<div class="kv"><span class="k">max_iter</span><span class="v">' + (model.hyperparameters && model.hyperparameters.max_iter) + '</span></div>';
+  }
+
+  function renderDriftInfo(row) {
+    var el = document.getElementById("drift-info");
+    if (!row) { el.innerHTML = '<div class="empty">Sin mediciones aún</div>'; return; }
+    el.innerHTML =
+      '<div class="kv"><span class="k">Feature</span><span class="v">' + row.feature + '</span></div>' +
+      '<div class="kv"><span class="k">KS</span><span class="v">' + row.ks_stat.toFixed(4) + '</span></div>' +
+      '<div class="kv"><span class="k">&Delta; media</span><span class="v">' + (row.mean_change_pct >= 0 ? "+" : "") + row.mean_change_pct.toFixed(1) + '%</span></div>' +
+      '<div class="kv"><span class="k">Muestra reciente</span><span class="v">' + fmtInt.format(row.recent_samples) + '</span></div>';
+  }
+
+  function load() {
+    var label = document.getElementById("live-label");
+    label.textContent = "actualizando…";
+
+    Promise.all([
+      rest("metrics?select=metric_name,metric_value,calculated_at&order=calculated_at.desc&limit=200"),
+      rest("model_versions?select=algorithm,hyperparameters,artifact_uri,trained_at&is_active=eq.true&limit=1"),
+      rest("model_drift_log?select=*&order=measured_at.desc&limit=1")
+    ]).then(function (results) {
+      var metrics = results[0], models = results[1], drift = results[2];
+      renderHorizons(metrics);
+      renderModelInfo(models[0]);
+      renderDriftInfo(drift[0]);
+      renderBanner(drift[0]);
+      label.textContent = "en vivo · " + fmtTime.format(new Date()) + " (Bogotá)";
+      document.getElementById("provenance").textContent =
+        "accuracy_monitor.py (cada hora) + drift_monitor.py (cada 6 h) → Supabase → esta página, consulta directa cada 60 s";
+    }).catch(function (err) {
+      label.textContent = "sin conexión";
+      console.error(err);
+    });
+  }
+
+  document.getElementById("refresh-btn").addEventListener("click", load);
+  load();
+  setInterval(load, REFRESH_MS);
+})();
+</script>
+</body>
+</html>

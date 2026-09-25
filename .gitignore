@@ -10,3 +10,4 @@ build/
 artifacts/
 data/
 *.egg-info/
+.vercel/
