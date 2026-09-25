@@ -1,9 +1,12 @@
 name: pulso-transmi-predict
 
 on:
-  schedule:
-    - cron: "*/5 * * * *"
+  # Primary trigger: cron-job.org calls the workflow_dispatch API every 10
+  # minutes (GitHub's own `schedule` is unreliable at sub-hourly frequency).
   workflow_dispatch:
+  schedule:
+    # Hourly safety net in case the external cron-job.org trigger fails.
+    - cron: "17 * * * *"
 
 concurrency:
   group: pulso-transmi-predict
@@ -12,9 +15,11 @@ concurrency:
 jobs:
   predict:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 8
     permissions:
       contents: read
+    env:
+      PYTHONUNBUFFERED: "1"
     steps:
       - uses: actions/checkout@v4
 
