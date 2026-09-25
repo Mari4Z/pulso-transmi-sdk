@@ -1,0 +1,36 @@
+name: Drift Monitor
+
+on:
+  schedule:
+    # Cada 6 horas: el drift no cambia tan rápido como para justificar
+    # revisarlo cada pocos minutos como las predicciones.
+    - cron: "23 */6 * * *"
+  workflow_dispatch:
+
+jobs:
+  monitor-drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install .
+
+      - name: Calcular y guardar drift
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          PULSO_API_KEY: ${{ secrets.PULSO_API_KEY }}
+          PULSO_API_URL: ${{ vars.PULSO_API_URL }}
+        run: python src/drift_monitor.py
