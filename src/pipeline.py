@@ -15,6 +15,7 @@ from sklearn.ensemble import HistGradientBoostingRegressor
 from supabase import Client, create_client
 
 from pulso_transmi import PulsoTransmiClient
+from pulso_transmi.client import DEFAULT_BASE_URL
 
 MODEL_DIR = Path("models")
 MODEL_PATH = MODEL_DIR / "pulso_hgb_poisson.joblib"
@@ -210,7 +211,12 @@ def main() -> None:
         ).execute()
 
     try:
-        with PulsoTransmiClient(timeout=60) as client:
+        # os.environ.get(...) or DEFAULT, not os.getenv's own default: the
+        # Actions `vars.PULSO_API_URL` repo variable exists but is set to an
+        # empty string when unconfigured, and getenv's default only kicks in
+        # when the key is absent entirely.
+        base_url = os.environ.get("PULSO_API_URL") or DEFAULT_BASE_URL
+        with PulsoTransmiClient(base_url=base_url, timeout=60) as client:
             print("Descargando observaciones...")
             observations = client.observations_dataframe(page_size=5000)
             stations = client.stations()

@@ -6,6 +6,7 @@ from scipy.stats import ks_2samp
 from supabase import Client, create_client
 
 from pulso_transmi import PulsoTransmiClient
+from pulso_transmi.client import DEFAULT_BASE_URL
 
 
 # A drift signal below this magnitude is logged and shown on the dashboard
@@ -32,7 +33,11 @@ def _write_severe_output(severe: bool) -> None:
 def main() -> None:
     print("Iniciando monitor de drift...")
     print("Descargando observaciones...")
-    with PulsoTransmiClient(timeout=60) as client:
+    # os.environ.get(...) or DEFAULT: the Actions `vars.PULSO_API_URL` repo
+    # variable exists but empty when unconfigured, and getenv's own default
+    # only kicks in when the key is absent entirely.
+    base_url = os.environ.get("PULSO_API_URL") or DEFAULT_BASE_URL
+    with PulsoTransmiClient(base_url=base_url, timeout=60) as client:
         # page_size es por página, no un límite total: el cliente pagina
         # automáticamente hasta traer todo el histórico disponible.
         observations = client.observations_dataframe(page_size=5000)
