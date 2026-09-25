@@ -1,6 +1,5 @@
 {
-  "experiment_id": "exp-20260918-hgb-poisson-001",
-  "model_version": "hgb-poisson-v1",
+  "model_version": "hgb-poisson-20260925T210826Z",
   "model": "HistGradientBoostingRegressor",
   "loss": "poisson",
   "parameters": {
@@ -17,11 +16,8 @@
     60
   ],
   "dataset": "pulso-transmi-starter-v1",
-  "dataset_generated_at": "2026-09-16",
   "training_cutoff": "2026-09-02T04:45:00+00:00",
-  "created_at": "2026-09-18T20:14:36.125571+00:00",
-  "scikit_learn_version": "1.9.1",
-  "joblib_version": "1.6.0",
+  "created_at": "2026-09-25T21:08:26.683421+00:00",
   "feature_columns": [
     "latitude",
     "longitude",
@@ -57,7 +53,7 @@
     "station_id_09000",
     "station_id_09122",
     "station_id_10009",
-    "corridor_Am\u00e9ricas",
+    "corridor_Américas",
     "corridor_Autonorte",
     "corridor_Calle 26",
     "corridor_Caracas",
@@ -71,5 +67,6 @@
     "45": 35664,
     "60": 35652
   },
-  "random_state": 42
+  "random_state": 42,
+  "triggered_by": "manual-test"
 }

@@ -2,16 +2,25 @@ name: pulso-transmi-pipeline
 
 on:
   workflow_dispatch:
+    inputs:
+      trigger:
+        description: "Qué disparó este reentrenamiento (manual, drift, ...)"
+        required: false
+        default: manual
   # Activa el schedule únicamente cuando el profesor publique la frecuencia.
   # schedule:
   #   - cron: "7 * * * *"
+
+concurrency:
+  group: pulso-transmi-pipeline
+  cancel-in-progress: false
 
 jobs:
   pipeline:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
-      contents: read
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -27,10 +36,23 @@ jobs:
       - name: Run tests
         run: pytest -q
 
-      - name: Ingest, train and predict
+      - name: Reentrenar y versionar modelo
         env:
           PULSO_API_URL: ${{ vars.PULSO_API_URL }}
           PULSO_API_KEY: ${{ secrets.PULSO_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          RETRAIN_TRIGGER: ${{ inputs.trigger || 'manual' }}
         run: python -m src.pipeline
+
+      - name: Publicar modelo si cambió
+        run: |
+          git config user.name "pulso-transmi-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add models/pulso_hgb_poisson.joblib models/pulso_hgb_poisson.json
+          if git diff --cached --quiet; then
+            echo "Sin cambios en el modelo, nada que publicar."
+          else
+            git commit -m "chore: retrain model (trigger: ${{ inputs.trigger || 'manual' }})"
+            git push
+          fi

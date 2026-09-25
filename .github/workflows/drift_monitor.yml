@@ -13,6 +13,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+      actions: write
     steps:
       - uses: actions/checkout@v4
 
@@ -28,9 +29,18 @@ jobs:
           pip install .
 
       - name: Calcular y guardar drift
+        id: drift
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           PULSO_API_KEY: ${{ secrets.PULSO_API_KEY }}
           PULSO_API_URL: ${{ vars.PULSO_API_URL }}
         run: python src/drift_monitor.py
+
+      # El umbral que decide "severo" vive en src/drift_monitor.py
+      # (SEVERE_MEAN_CHANGE_PCT), no aquí.
+      - name: Disparar reentrenamiento por drift severo
+        if: steps.drift.outputs.severe_drift == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pipeline.yml --ref ${{ github.ref_name }} -f trigger=drift

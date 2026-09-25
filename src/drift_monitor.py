@@ -8,10 +8,25 @@ from supabase import Client, create_client
 from pulso_transmi import PulsoTransmiClient
 
 
+# A drift signal below this magnitude is logged and shown on the dashboard
+# but doesn't justify an automatic retrain by itself (KS is very sensitive
+# at these sample sizes, so small shifts trigger drift_detected constantly).
+SEVERE_MEAN_CHANGE_PCT = 15.0
+
+
 def _pct_change(historical: float, recent: float) -> float | None:
     if historical == 0:
         return None
     return (recent - historical) / abs(historical) * 100.0
+
+
+def _write_severe_output(severe: bool) -> None:
+    """Expose the retrain decision to the calling workflow via $GITHUB_OUTPUT."""
+    path = os.environ.get("GITHUB_OUTPUT")
+    if not path:
+        return
+    with open(path, "a", encoding="utf-8") as fh:
+        fh.write(f"severe_drift={'true' if severe else 'false'}\n")
 
 
 def main() -> None:
@@ -24,6 +39,7 @@ def main() -> None:
 
     if observations.empty:
         print("No hay suficientes datos para drift.")
+        _write_severe_output(False)
         return
 
     # Los datos más recientes (último día disponible) vs. todo lo anterior como baseline
@@ -33,6 +49,7 @@ def main() -> None:
 
     if recent.empty or historical.empty:
         print("No hay suficientes datos particionados para calcular drift (necesitamos datos de más de 1 día).")
+        _write_severe_output(False)
         return
 
     features_to_monitor = ["demand"]
@@ -74,6 +91,7 @@ def main() -> None:
 
     if not drift_logs:
         print("No se pudo calcular drift para ninguna feature.")
+        _write_severe_output(False)
         return
 
     print("Resultados de Drift:")
@@ -84,6 +102,13 @@ def main() -> None:
             f"  {log['feature']}: Drift={'Si' if log['drift_detected'] else 'No'} "
             f"(p={log['p_value']:.4f}, ks={log['ks_stat']:.4f}, cambio_media={change_str})"
         )
+
+    severe = any(
+        log["drift_detected"] and abs(log["mean_change_pct"] or 0) >= SEVERE_MEAN_CHANGE_PCT
+        for log in drift_logs
+    )
+    print(f"¿Drift severo (retrain automático)? {'Sí' if severe else 'No'}")
+    _write_severe_output(severe)
 
     supabase_url = os.environ.get("SUPABASE_URL")
     supabase_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_KEY")
