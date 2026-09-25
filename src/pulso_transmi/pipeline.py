@@ -18,6 +18,9 @@ from .client import DEFAULT_BASE_URL, PulsoTransmiClient
 MODEL_PATH = Path("models/pulso_hgb_poisson.joblib")
 METADATA_PATH = Path("models/pulso_hgb_poisson.json")
 HORIZONS = (15, 30, 45, 60)
+# Must match ALGORITHM in src/pipeline.py — it's what registers the active
+# model_versions row this reads back.
+ALGORITHM = "hgb-poisson"
 
 
 class PipelineError(RuntimeError):
@@ -215,6 +218,59 @@ def submit(
     return {"idempotency_key": idempotency_key, "response": response.json()}
 
 
+def _active_model_version_id(supabase: Any) -> str | None:
+    result = (
+        supabase.table("model_versions")
+        .select("model_version_id")
+        .eq("algorithm", ALGORITHM)
+        .eq("is_active", True)
+        .limit(1)
+        .execute()
+    )
+    rows = result.data or []
+    return rows[0]["model_version_id"] if rows else None
+
+
+def record_predictions(
+    targets: list[dict[str, Any]],
+    predictions: list[dict[str, Any]],
+) -> None:
+    """Best-effort: store what we predicted so accuracy can be scored later
+    once the target time has passed and the real demand is known. Never
+    raises — a submission that already succeeded with the competition API
+    must not fail the job over local bookkeeping."""
+    supabase_url = os.environ.get("SUPABASE_URL")
+    supabase_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+    if not supabase_url or not supabase_key:
+        print("Variables Supabase no definidas, predicciones no registradas localmente.")
+        return
+    try:
+        from supabase import create_client
+
+        supabase = create_client(supabase_url, supabase_key)
+        model_version_id = _active_model_version_id(supabase)
+        if not model_version_id:
+            print("No hay model_versions activo en Supabase; predicciones no registradas.")
+            return
+        rows = [
+            {
+                "model_version_id": model_version_id,
+                "station_id": pred["station_id"],
+                "target_at": pred["target_at"],
+                "horizon_steps": int(target["horizon_minutes"]) // 15,
+                "predicted_demand": pred["value"],
+                "submission_status": "sent",
+            }
+            for target, pred in zip(targets, predictions)
+        ]
+        supabase.table("predictions").upsert(
+            rows, on_conflict="model_version_id,station_id,target_at,horizon_steps"
+        ).execute()
+        print(f"{len(rows)} predicciones registradas en Supabase para evaluación de accuracy.")
+    except Exception as exc:
+        print(f"Advertencia: no se pudieron registrar las predicciones en Supabase: {exc}")
+
+
 def main() -> None:
     api_key = os.environ.get("PULSO_API_KEY")
     if not api_key:
@@ -239,6 +295,7 @@ def main() -> None:
             context = client.context_dataframe(page_size=5000)
         predictions = predict_targets(cycle, observations, stations, context, package)
         result = submit(base_url, api_key, cycle, model_metadata, predictions, http_client)
+    record_predictions(cycle.get("targets", []), predictions)
     receipt = {
         "cycle_id": cycle["cycle_id"],
         "model_version": model_metadata["model_version"],

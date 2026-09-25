@@ -38,6 +38,8 @@ jobs:
         env:
           PULSO_API_URL: ${{ vars.PULSO_API_URL }}
           PULSO_API_KEY: ${{ secrets.PULSO_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: python -m pulso_transmi.pipeline
 
       - name: Upload submission receipt

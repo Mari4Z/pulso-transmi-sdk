@@ -1,12 +1,32 @@
 import os
-from supabase import create_client, Client
-from pulso_transmi import PulsoTransmiClient
+
 import pandas as pd
+from supabase import Client, create_client
+
+from pulso_transmi import PulsoTransmiClient
+from pulso_transmi.client import DEFAULT_BASE_URL
+
+# Must match the dataset_versions row the API currently serves (see
+# GET /v1/meta -> dataset.dataset). observations.dataset_version is a
+# required FK to that table.
+DATASET_VERSION = "pulso-transmi-starter-v1"
+
+
+def _latest_observed_at(supabase: Client) -> str | None:
+    result = (
+        supabase.table("observations")
+        .select("observed_at")
+        .order("observed_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    rows = result.data or []
+    return rows[0]["observed_at"] if rows else None
+
 
 def main():
     print("Iniciando colector de datos...")
-    
-    # Extraer variables de entorno para Supabase
+
     supabase_url = os.environ.get("SUPABASE_URL")
     supabase_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_KEY")
 
@@ -14,45 +34,41 @@ def main():
         print("Error: Las variables de entorno de Supabase no están definidas.")
         return
 
-    # Inicializar cliente de Supabase
     supabase: Client = create_client(supabase_url, supabase_key)
 
-    # Consumir API usando el SDK local
-    print("Conectando a la API de Pulso TransMi...")
-    with PulsoTransmiClient(timeout=60) as client:
-        # Aquí puedes definir cuántos registros obtener o si filtrar por tiempo
-        print("Descargando observaciones recientes...")
-        observations = client.observations_dataframe(page_size=1000)
-    
+    # Solo traer lo nuevo desde la última observación ya guardada, en vez de
+    # volver a bajar el histórico completo (45 días) en cada corrida.
+    since = _latest_observed_at(supabase)
+    if since:
+        print(f"Última observación guardada: {since}. Descargando solo datos posteriores...")
+    else:
+        print("Sin observaciones previas; descargando histórico completo.")
+
+    base_url = os.environ.get("PULSO_API_URL") or DEFAULT_BASE_URL
+    with PulsoTransmiClient(base_url=base_url, timeout=60) as client:
+        print("Conectando a la API de Pulso TransMi...")
+        observations = client.observations_dataframe(start=since, page_size=5000)
+
     if observations.empty:
-        print("No hay datos para recolectar en este momento.")
+        print("No hay datos nuevos para recolectar en este momento.")
         return
 
-    # Preparar los datos para la inserción
     print(f"Obtenidas {len(observations)} observaciones. Preparando para Supabase...")
-    
-    # Asegurar que las fechas/timestamps se puedan serializar a JSON
-    if "observed_at" in observations.columns:
-        observations["observed_at"] = observations["observed_at"].dt.strftime('%Y-%m-%dT%H:%M:%S%z')
 
-    # Reemplazar valores NaN por None para evitar errores de JSON en PostgreSQL
+    if "observed_at" in observations.columns:
+        observations["observed_at"] = observations["observed_at"].dt.strftime("%Y-%m-%dT%H:%M:%S%z")
+
+    observations["dataset_version"] = DATASET_VERSION
     observations = observations.where(pd.notnull(observations), None)
-    
-    # Convertir dataframe a lista de diccionarios
     records = observations.to_dict(orient="records")
 
-    # Insertar los registros
-    # NOTA: Asegúrate de que exista una tabla llamada "observations" en tu proyecto de Supabase
-    # y de que los nombres de columna coincidan con las llaves del diccionario.
-    print("Insertando datos en Supabase (tabla 'observations')...")
+    print(f"Insertando {len(records)} filas en Supabase (tabla 'observations')...")
     try:
-        # Se usa upsert para sobreescribir datos en caso de llaves duplicadas
-        # Asegúrate de tener una Primary Key configurada en Supabase (ej. id)
-        response = supabase.table("observations").upsert(records).execute()
+        supabase.table("observations").upsert(records, on_conflict="station_id,observed_at").execute()
         print("¡Inserción exitosa!")
     except Exception as e:
         print(f"Error al insertar en Supabase: {e}")
 
+
 if __name__ == "__main__":
     main()
-
