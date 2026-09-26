@@ -1,0 +1,15 @@
+artifact_uri: file:///home/runner/work/pulso-transmi-sdk/pulso-transmi-sdk/mlruns/411730144589502796/3bbd66890e564aa195d1901494b0d0ae/artifacts
+end_time: 1790457735887
+entry_point_name: ''
+experiment_id: '411730144589502796'
+lifecycle_stage: active
+run_id: 3bbd66890e564aa195d1901494b0d0ae
+run_name: hgb-poisson-20260926T212158Z
+run_uuid: 3bbd66890e564aa195d1901494b0d0ae
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1790457735828
+status: 3
+tags: []
+user_id: runner
