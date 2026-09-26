@@ -125,6 +125,39 @@ class PulsoTransmiClient:
             frame["station_id"] = frame["station_id"].astype("string")
         return frame
 
+    def stream_observations_dataframe(self, *, page_size: int = 5000) -> pd.DataFrame:
+        """The live feed (/v1/stream/observations): observations released
+        after the static 45-day history_end, up through each forecast
+        cycle's data_cutoff. observations_dataframe() alone never advances
+        past history_end — this is the only source for anything newer, and
+        predict-time feature building needs it merged in or every "latest"
+        row is stuck days behind the cycle being predicted."""
+        rows = list(self._all_pages("/v1/stream/observations", {"limit": page_size}))
+        frame = pd.DataFrame(rows)
+        if not frame.empty:
+            frame["observed_at"] = pd.to_datetime(frame["observed_at"], utc=True)
+            frame["station_id"] = frame["station_id"].astype("string")
+            frame = frame.drop(columns=[c for c in ("released_at",) if c in frame.columns])
+        return frame
+
+    def all_observations_dataframe(self, *, page_size: int = 5000) -> pd.DataFrame:
+        """Static history + live stream, merged and deduplicated on
+        (station_id, observed_at). Use this instead of observations_dataframe
+        alone for anything that needs to be current as of "now" (predicting,
+        collecting) rather than just the fixed historical window."""
+        history = self.observations_dataframe(page_size=page_size)
+        stream = self.stream_observations_dataframe(page_size=page_size)
+        if history.empty:
+            combined = stream
+        elif stream.empty:
+            combined = history
+        else:
+            combined = pd.concat([history, stream], ignore_index=True)
+        if combined.empty:
+            return combined
+        combined = combined.drop_duplicates(subset=["station_id", "observed_at"], keep="last")
+        return combined.sort_values(["station_id", "observed_at"]).reset_index(drop=True)
+
     def context_dataframe(
         self,
         *,

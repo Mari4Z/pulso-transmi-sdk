@@ -12,16 +12,21 @@ from pulso_transmi.client import DEFAULT_BASE_URL
 DATASET_VERSION = "pulso-transmi-starter-v1"
 
 
-def _latest_observed_at(supabase: Client) -> str | None:
-    result = (
-        supabase.table("observations")
-        .select("observed_at")
-        .order("observed_at", desc=True)
-        .limit(1)
-        .execute()
-    )
-    rows = result.data or []
-    return rows[0]["observed_at"] if rows else None
+def _has_any_observations(supabase: Client) -> bool:
+    result = supabase.table("observations").select("station_id").limit(1).execute()
+    return bool(result.data)
+
+
+def _upsert(supabase: Client, observations: pd.DataFrame) -> int:
+    if observations.empty:
+        return 0
+    frame = observations.copy()
+    frame["observed_at"] = frame["observed_at"].dt.strftime("%Y-%m-%dT%H:%M:%S%z")
+    frame["dataset_version"] = DATASET_VERSION
+    frame = frame.where(pd.notnull(frame), None)
+    records = frame.to_dict(orient="records")
+    supabase.table("observations").upsert(records, on_conflict="station_id,observed_at").execute()
+    return len(records)
 
 
 def main():
@@ -35,39 +40,31 @@ def main():
         return
 
     supabase: Client = create_client(supabase_url, supabase_key)
-
-    # Solo traer lo nuevo desde la última observación ya guardada, en vez de
-    # volver a bajar el histórico completo (45 días) en cada corrida.
-    since = _latest_observed_at(supabase)
-    if since:
-        print(f"Última observación guardada: {since}. Descargando solo datos posteriores...")
-    else:
-        print("Sin observaciones previas; descargando histórico completo.")
-
     base_url = os.environ.get("PULSO_API_URL") or DEFAULT_BASE_URL
+
     with PulsoTransmiClient(base_url=base_url, timeout=60) as client:
         print("Conectando a la API de Pulso TransMi...")
-        observations = client.observations_dataframe(start=since, page_size=5000)
 
-    if observations.empty:
-        print("No hay datos nuevos para recolectar en este momento.")
+        # /v1/observations only ever serves the fixed 45-day static window —
+        # it never advances. Only /v1/stream/observations grows over time
+        # (it's what actually reaches each forecast cycle's data_cutoff), so
+        # that's what needs collecting on every run. The static window only
+        # needs loading once, the first time this ever runs.
+        if not _has_any_observations(supabase):
+            print("Tabla vacía: cargando el histórico estático (45 días) una vez...")
+            history = client.observations_dataframe(page_size=5000)
+            n = _upsert(supabase, history)
+            print(f"{n} filas históricas insertadas.")
+
+        print("Descargando datos nuevos del stream en vivo...")
+        stream = client.stream_observations_dataframe(page_size=5000)
+
+    if stream.empty:
+        print("No hay datos nuevos en el stream en este momento.")
         return
 
-    print(f"Obtenidas {len(observations)} observaciones. Preparando para Supabase...")
-
-    if "observed_at" in observations.columns:
-        observations["observed_at"] = observations["observed_at"].dt.strftime("%Y-%m-%dT%H:%M:%S%z")
-
-    observations["dataset_version"] = DATASET_VERSION
-    observations = observations.where(pd.notnull(observations), None)
-    records = observations.to_dict(orient="records")
-
-    print(f"Insertando {len(records)} filas en Supabase (tabla 'observations')...")
-    try:
-        supabase.table("observations").upsert(records, on_conflict="station_id,observed_at").execute()
-        print("¡Inserción exitosa!")
-    except Exception as e:
-        print(f"Error al insertar en Supabase: {e}")
+    n = _upsert(supabase, stream)
+    print(f"{n} filas del stream insertadas/actualizadas en Supabase.")
 
 
 if __name__ == "__main__":

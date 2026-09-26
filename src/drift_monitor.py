@@ -38,9 +38,10 @@ def main() -> None:
     # only kicks in when the key is absent entirely.
     base_url = os.environ.get("PULSO_API_URL") or DEFAULT_BASE_URL
     with PulsoTransmiClient(base_url=base_url, timeout=60) as client:
-        # page_size es por página, no un límite total: el cliente pagina
-        # automáticamente hasta traer todo el histórico disponible.
-        observations = client.observations_dataframe(page_size=5000)
+        # observations_dataframe() sola nunca avanza más allá del histórico
+        # estático (45 días fijos); sin el stream en vivo, "reciente" acá
+        # terminaría siendo el mismo tramo viejo de siempre, no lo actual.
+        observations = client.all_observations_dataframe(page_size=5000)
 
     if observations.empty:
         print("No hay suficientes datos para drift.")
