@@ -2,13 +2,18 @@ name: Drift Monitor
 
 on:
   schedule:
-    # Se ejecuta todos los días a la medianoche
-    - cron: '0 0 * * *'
+    # Cada 6 horas: el drift no cambia tan rápido como para justificar
+    # revisarlo cada pocos minutos como las predicciones.
+    - cron: "23 */6 * * *"
   workflow_dispatch:
 
 jobs:
   check-drift:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: write
     steps:
       - name: Checkout del repositorio
         uses: actions/checkout@v4
@@ -24,12 +29,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install .
-          pip install scipy
 
       - name: Ejecutar Monitoreo de Drift
+        id: drift
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           PULSO_API_KEY: ${{ secrets.PULSO_API_KEY }}
-        run: |
-          python src/drift_monitor.py
+          PULSO_API_URL: ${{ vars.PULSO_API_URL }}
+        run: python src/drift_monitor.py
+
+      # El umbral que decide "severo" vive en src/drift_monitor.py
+      # (SEVERE_MEAN_CHANGE_PCT), no aquí.
+      - name: Disparar reentrenamiento por drift severo
+        if: steps.drift.outputs.severe_drift == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pipeline.yml --ref ${{ github.ref_name }} -f trigger=drift
