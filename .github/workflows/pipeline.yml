@@ -45,11 +45,11 @@ jobs:
           RETRAIN_TRIGGER: ${{ inputs.trigger || 'manual' }}
         run: python -m src.pipeline
 
-      - name: Publicar modelo si cambió
+      - name: Publicar modelo y experimentos de MLflow si cambiaron
         run: |
           git config user.name "pulso-transmi-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add models/pulso_hgb_poisson.joblib models/pulso_hgb_poisson.json
+          git add models/pulso_hgb_poisson.joblib models/pulso_hgb_poisson.json mlruns/
           if git diff --cached --quiet; then
             echo "Sin cambios en el modelo, nada que publicar."
           else

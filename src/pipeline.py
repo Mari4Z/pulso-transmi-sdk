@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import joblib
+import mlflow
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import HistGradientBoostingRegressor
@@ -20,6 +21,14 @@ from pulso_transmi.client import DEFAULT_BASE_URL
 MODEL_DIR = Path("models")
 MODEL_PATH = MODEL_DIR / "pulso_hgb_poisson.joblib"
 METADATA_PATH = MODEL_DIR / "pulso_hgb_poisson.json"
+
+# Local file store, committed to git alongside models/ (see pipeline.yml's
+# "Publicar modelo" step) instead of a hosted tracking server — this is a
+# student project, not a team that needs concurrent write access to one
+# store. Run `mlflow ui` from the repo root to browse the accumulated
+# experiment history.
+MLFLOW_TRACKING_DIR = Path("mlruns")
+MLFLOW_EXPERIMENT_NAME = "pulso-transmi-hgb-poisson"
 
 # Horizon steps in units of 15 minutes (1 -> 15min, 2 -> 30min, ...). The
 # `models` dict in the joblib package is keyed by these step numbers, not by
@@ -122,28 +131,64 @@ def _supabase_client() -> Client | None:
     return create_client(url, key)
 
 
-def train_all_horizons(frame: pd.DataFrame, cutoff: pd.Timestamp) -> tuple[dict, list[str], dict[str, int]]:
+def train_and_evaluate(
+    frame: pd.DataFrame, cutoff: pd.Timestamp, validation_end: pd.Timestamp
+) -> tuple[dict, list[str], dict[str, int], dict[int, dict[str, float | int | None]]]:
+    """Train each horizon's model on rows before `cutoff`, then score it on
+    the held-out window [cutoff, validation_end] — same WAPE/accuracy
+    definition as accuracy_monitor.py, so these numbers are directly
+    comparable to what that job (and the dashboard) reports for live
+    predictions, just measured immediately instead of waiting on ground
+    truth to arrive."""
     models: dict[int, HistGradientBoostingRegressor] = {}
     feature_columns: list[str] | None = None
     rows_by_horizon: dict[str, int] = {}
+    metrics_by_horizon: dict[int, dict[str, float | int | None]] = {}
 
     for horizon in HORIZONS:
         training = frame.copy()
         training["target_at"] = training["observed_at"] + pd.Timedelta(int(15 * horizon), unit="m")
         training["target"] = training.groupby("station_id")["demand"].shift(-horizon)
-        eligible = training[training["target_at"] < cutoff].dropna(subset=["target"]).copy()
-        eligible = add_training_statistics(eligible, eligible["target"], eligible)
-        eligible = eligible.dropna(subset=list(NUMERIC_FEATURES)).copy()
-        target = eligible.pop("target")
-        matrix = prepare_matrix(eligible)
+        eligible = training.dropna(subset=["target"]).copy()
+
+        train_rows = eligible[eligible["target_at"] < cutoff].copy()
+        val_rows = eligible[
+            (eligible["target_at"] >= cutoff) & (eligible["target_at"] <= validation_end)
+        ].copy()
+
+        train_rows = add_training_statistics(train_rows, train_rows["target"], train_rows)
+        val_rows = add_training_statistics(train_rows, train_rows["target"], val_rows)
+        train_rows = train_rows.dropna(subset=list(NUMERIC_FEATURES)).copy()
+        val_rows = val_rows.dropna(subset=list(NUMERIC_FEATURES)).copy()
+
+        y_train = train_rows.pop("target")
+        matrix = prepare_matrix(train_rows)
         feature_columns = matrix.columns.tolist()
         model = HistGradientBoostingRegressor(loss="poisson", **HYPERPARAMETERS)
-        model.fit(matrix, target)
+        model.fit(matrix, y_train)
         models[horizon] = model
-        rows_by_horizon[str(horizon * 15)] = len(eligible)
+        rows_by_horizon[str(horizon * 15)] = len(train_rows)
+
+        horizon_minutes = horizon * 15
+        if val_rows.empty:
+            metrics_by_horizon[horizon_minutes] = {"wape": None, "accuracy": None, "n_val": 0}
+            continue
+        y_val = val_rows.pop("target")
+        X_val = prepare_matrix(val_rows).reindex(columns=feature_columns, fill_value=0.0)
+        preds = model.predict(X_val)
+        actual_sum = float(y_val.sum())
+        if actual_sum <= 0:
+            metrics_by_horizon[horizon_minutes] = {"wape": None, "accuracy": None, "n_val": len(val_rows)}
+            continue
+        wape = float((y_val - preds).abs().sum() / actual_sum)
+        metrics_by_horizon[horizon_minutes] = {
+            "wape": wape,
+            "accuracy": max(0.0, 1 - wape),
+            "n_val": len(val_rows),
+        }
 
     assert feature_columns is not None
-    return models, feature_columns, rows_by_horizon
+    return models, feature_columns, rows_by_horizon, metrics_by_horizon
 
 
 def register_training_run(
@@ -156,7 +201,7 @@ def register_training_run(
     validation_end: pd.Timestamp,
     model_version: str,
     trained_at: datetime,
-) -> str:
+) -> tuple[str, str]:
     definition = {"numeric": list(NUMERIC_FEATURES), "categorical": list(CATEGORICAL_FEATURES)}
     definition_hash = hashlib.sha256(json.dumps(definition, sort_keys=True).encode()).hexdigest()[:16]
     supabase.table("feature_sets").upsert(
@@ -192,9 +237,10 @@ def register_training_run(
         "is_active", True
     ).execute()
 
+    model_version_id = str(uuid.uuid4())
     supabase.table("model_versions").insert(
         {
-            "model_version_id": str(uuid.uuid4()),
+            "model_version_id": model_version_id,
             "training_run_id": training_run_id,
             "algorithm": ALGORITHM,
             "hyperparameters": HYPERPARAMETERS,
@@ -203,7 +249,39 @@ def register_training_run(
             "is_active": True,
         }
     ).execute()
-    return training_run_id
+    return training_run_id, model_version_id
+
+
+def record_validation_metrics(
+    supabase: Client,
+    *,
+    model_version_id: str,
+    metrics_by_horizon: dict[int, dict[str, float | int | None]],
+    window_start: pd.Timestamp,
+    window_end: pd.Timestamp,
+    calculated_at: datetime,
+) -> None:
+    """Same metric_name convention as accuracy_monitor.py's live scoring
+    (accuracy_{h}min / wape_{h}min) so these land in the same dashboard
+    tiles — a holdout reading available immediately, instead of waiting on
+    real predictions to resolve."""
+    rows = []
+    for horizon_minutes, values in metrics_by_horizon.items():
+        if values["accuracy"] is None:
+            continue
+        for metric_name, value in (("accuracy", values["accuracy"]), ("wape", values["wape"])):
+            rows.append(
+                {
+                    "model_version_id": model_version_id,
+                    "metric_name": f"{metric_name}_{horizon_minutes}min",
+                    "window_start": window_start.isoformat(),
+                    "window_end": window_end.isoformat(),
+                    "metric_value": value,
+                    "calculated_at": calculated_at.isoformat(),
+                }
+            )
+    if rows:
+        supabase.table("metrics").insert(rows).execute()
 
 
 def main() -> None:
@@ -245,8 +323,18 @@ def main() -> None:
         train_end = cutoff - pd.Timedelta(1, unit="m")
         validation_start = cutoff
 
-        print("Entrenando modelos (horizontes 15/30/45/60 min)...")
-        models, feature_columns, rows_by_horizon = train_all_horizons(frame, cutoff)
+        print("Entrenando y evaluando modelos (horizontes 15/30/45/60 min)...")
+        models, feature_columns, rows_by_horizon, metrics_by_horizon = train_and_evaluate(
+            frame, cutoff, validation_end
+        )
+        for horizon_minutes, values in metrics_by_horizon.items():
+            if values["accuracy"] is None:
+                print(f"  {horizon_minutes}min: sin datos de validación")
+            else:
+                print(
+                    f"  {horizon_minutes}min: accuracy={values['accuracy'] * 100:.2f}% "
+                    f"wape={values['wape'] * 100:.2f}% (n={values['n_val']})"
+                )
 
         model_version = "hgb-poisson-" + started_at.strftime("%Y%m%dT%H%M%SZ")
         MODEL_DIR.mkdir(exist_ok=True)
@@ -258,6 +346,7 @@ def main() -> None:
         }
         joblib.dump(package, MODEL_PATH, compress=3)
 
+        triggered_by = os.environ.get("RETRAIN_TRIGGER", "manual")
         metadata = {
             "model_version": model_version,
             "model": "HistGradientBoostingRegressor",
@@ -269,14 +358,41 @@ def main() -> None:
             "created_at": started_at.isoformat(),
             "feature_columns": feature_columns,
             "training_rows_by_horizon": rows_by_horizon,
+            "validation_metrics": metrics_by_horizon,
             "random_state": HYPERPARAMETERS["random_state"],
-            "triggered_by": os.environ.get("RETRAIN_TRIGGER", "manual"),
+            "triggered_by": triggered_by,
         }
         METADATA_PATH.write_text(json.dumps(metadata, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         print(f"Modelo {model_version} guardado en {MODEL_PATH}")
 
+        # MLflow: registro local (mlruns/, committed a git junto al modelo —
+        # ver pipeline.yml) en vez de un tracking server, para no montar
+        # infraestructura aparte solo para esto. `mlflow ui` desde la raíz
+        # del repo muestra el historial completo de reentrenamientos.
+        mlflow.set_tracking_uri(f"file:{MLFLOW_TRACKING_DIR.resolve()}")
+        mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
+        with mlflow.start_run(run_name=model_version):
+            mlflow.set_tags({"algorithm": ALGORITHM, "triggered_by": triggered_by, "dataset": DATASET_VERSION})
+            mlflow.log_params(
+                {
+                    **HYPERPARAMETERS,
+                    "train_start": str(train_start),
+                    "train_end": str(train_end),
+                    "validation_start": str(validation_start),
+                    "validation_end": str(validation_end),
+                    "feature_set_id": FEATURE_SET_ID,
+                }
+            )
+            for horizon_minutes, values in metrics_by_horizon.items():
+                mlflow.log_metric(f"train_rows_{horizon_minutes}min", rows_by_horizon[str(horizon_minutes)])
+                if values["accuracy"] is not None:
+                    mlflow.log_metric(f"accuracy_{horizon_minutes}min", values["accuracy"])
+                    mlflow.log_metric(f"wape_{horizon_minutes}min", values["wape"])
+                    mlflow.log_metric(f"n_val_{horizon_minutes}min", values["n_val"])
+            mlflow.log_artifact(str(METADATA_PATH))
+
         if supabase is not None:
-            register_training_run(
+            training_run_id, model_version_id = register_training_run(
                 supabase,
                 execution_id=execution_id,
                 train_start=train_start,
@@ -285,6 +401,14 @@ def main() -> None:
                 validation_end=validation_end,
                 model_version=model_version,
                 trained_at=started_at,
+            )
+            record_validation_metrics(
+                supabase,
+                model_version_id=model_version_id,
+                metrics_by_horizon=metrics_by_horizon,
+                window_start=validation_start,
+                window_end=validation_end,
+                calculated_at=started_at,
             )
             supabase.table("pipeline_executions").update(
                 {
