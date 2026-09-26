@@ -1,5 +1,5 @@
 {
-  "model_version": "hgb-poisson-20260925T213843Z",
+  "model_version": "hgb-poisson-20260926T160708Z",
   "model": "HistGradientBoostingRegressor",
   "loss": "poisson",
   "parameters": {
@@ -16,8 +16,8 @@
     60
   ],
   "dataset": "pulso-transmi-starter-v1",
-  "training_cutoff": "2026-09-02T04:45:00+00:00",
-  "created_at": "2026-09-25T21:38:43.223070+00:00",
+  "training_cutoff": "2026-09-07T05:00:00+00:00",
+  "created_at": "2026-09-26T16:07:08.501297+00:00",
   "feature_columns": [
     "latitude",
     "longitude",
@@ -62,11 +62,11 @@
     "corridor_Suba"
   ],
   "training_rows_by_horizon": {
-    "15": 35688,
-    "30": 35676,
-    "45": 35664,
-    "60": 35652
+    "15": 41460,
+    "30": 41448,
+    "45": 41436,
+    "60": 41424
   },
   "random_state": 42,
-  "triggered_by": "verification"
+  "triggered_by": "quality-review-fresh-data"
 }

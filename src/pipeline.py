@@ -53,7 +53,15 @@ CATEGORICAL_FEATURES = ("station_id", "corridor")
 
 
 def build_features(observations: pd.DataFrame, stations: pd.DataFrame, context: pd.DataFrame) -> pd.DataFrame:
-    frame = observations.merge(stations, on="station_id").merge(context, on="observed_at")
+    # `context` has no live stream and stops at the static history's end;
+    # `observations` now extends past that via all_observations_dataframe().
+    # An inner merge would silently drop every row newer than context's max,
+    # capping training at the same stale window as before. Left merge +
+    # forward-fill keeps them, reusing the last known context.
+    frame = observations.merge(stations, on="station_id").merge(context, on="observed_at", how="left")
+    context_columns = [c for c in context.columns if c != "observed_at"]
+    frame = frame.sort_values("observed_at")
+    frame[context_columns] = frame[context_columns].ffill()
     frame["local_at"] = frame["observed_at"].dt.tz_convert("America/Bogota")
     frame["local_hour"] = frame["local_at"].dt.hour
     frame["local_weekday"] = frame["local_at"].dt.weekday
@@ -218,7 +226,11 @@ def main() -> None:
         base_url = os.environ.get("PULSO_API_URL") or DEFAULT_BASE_URL
         with PulsoTransmiClient(base_url=base_url, timeout=60) as client:
             print("Descargando observaciones...")
-            observations = client.observations_dataframe(page_size=5000)
+            # Histórico estático + stream en vivo: sin el stream, el holdout
+            # de validación (últimos 7 días de esto) queda anclado siempre
+            # al mismo 2026-09-09, cada vez más lejos del momento real que
+            # se está compitiendo.
+            observations = client.all_observations_dataframe(page_size=5000)
             stations = client.stations()
             context = client.context_dataframe(page_size=5000)
 
