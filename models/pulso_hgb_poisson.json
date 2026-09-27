@@ -1,12 +1,12 @@
 {
-  "model_version": "hgb-poisson-20260926T212158Z",
+  "model_version": "hgb-poisson-20260927T024603Z",
   "model": "HistGradientBoostingRegressor",
   "loss": "poisson",
   "parameters": {
     "max_iter": 300,
-    "learning_rate": 0.06,
-    "max_leaf_nodes": 31,
-    "l2_regularization": 1.0,
+    "learning_rate": 0.08,
+    "max_leaf_nodes": 63,
+    "l2_regularization": 2.0,
     "random_state": 42
   },
   "horizons_minutes": [
@@ -16,16 +16,11 @@
     60
   ],
   "dataset": "pulso-transmi-starter-v1",
-  "training_cutoff": "2026-09-07T10:30:00+00:00",
-  "created_at": "2026-09-26T21:21:58.883167+00:00",
+  "training_cutoff": "2026-09-07T16:00:00+00:00",
+  "created_at": "2026-09-27T02:46:03.361463+00:00",
   "feature_columns": [
     "latitude",
     "longitude",
-    "rain_mm",
-    "rain_forecast",
-    "temperature_c",
-    "temperature_forecast",
-    "event_intensity",
     "local_hour",
     "local_weekday",
     "is_weekend",
@@ -62,33 +57,33 @@
     "corridor_Suba"
   ],
   "training_rows_by_horizon": {
-    "15": 41724,
-    "30": 41712,
-    "45": 41700,
-    "60": 41688
+    "15": 41988,
+    "30": 41976,
+    "45": 41964,
+    "60": 41952
   },
   "validation_metrics": {
     "15": {
-      "wape": 0.15425920755175826,
-      "accuracy": 0.8457407924482417,
+      "wape": 0.15785726159195673,
+      "accuracy": 0.8421427384080433,
       "n_val": 8076
     },
     "30": {
-      "wape": 0.1596965430892389,
-      "accuracy": 0.8403034569107611,
+      "wape": 0.16196821955192128,
+      "accuracy": 0.8380317804480787,
       "n_val": 8076
     },
     "45": {
-      "wape": 0.16143356001683043,
-      "accuracy": 0.8385664399831696,
+      "wape": 0.16611108970992589,
+      "accuracy": 0.8338889102900742,
       "n_val": 8076
     },
     "60": {
-      "wape": 0.1658651093001477,
-      "accuracy": 0.8341348906998522,
+      "wape": 0.16916706714580682,
+      "accuracy": 0.8308329328541932,
       "n_val": 8076
     }
   },
   "random_state": 42,
-  "triggered_by": "mlflow-verification"
+  "triggered_by": "hparam-tuning"
 }
