@@ -32,6 +32,50 @@ El modelo Poisson fue el mejor en los cuatro horizontes:
 | 45 min | 12,837% | 87,163% |
 | 60 min | 12,972% | 87,028% |
 
+Nota: estas cifras del 18-sep se midieron sobre un holdout que terminaba en
+`2026-09-09` (el límite del histórico estático de entonces). El experimento
+siguiente las repite sobre un holdout genuinamente más reciente.
+
+## exp-20260927-hgb-poisson-002: búsqueda de hiperparámetros + features
+
+Con el pipeline de predicción ya corrigiendo el bug de datos congelados (ver
+commits `d040fb9`/`31aa0d1`), se hizo una búsqueda de hiperparámetros contra
+datos en vivo para ver si quedaba margen de mejora. Metodología: mismo split
+que `src/pipeline.py::train_and_evaluate` (train < cutoff, holdout = últimos
+7 días reales), accuracy = 1 − WAPE promediado entre los 4 horizontes.
+
+- **Ronda 1** (12 combinaciones de `learning_rate`/`max_leaf_nodes`/
+  `l2_regularization`/`max_iter` alrededor del campeón anterior): resultados
+  apretados entre 83.0% y 83.3% — el modelo no estaba limitado por
+  hiperparámetros.
+- Se probó además quitar `rain_mm`, `rain_forecast`, `temperature_c`,
+  `temperature_forecast`, `event_intensity` de las features: **83.58%**, el
+  mejor resultado de la ronda. Motivo: `context` no tiene stream en vivo (ver
+  `PulsoTransmiClient.stream_observations_dataframe`), así que en predicción
+  real esas columnas son siempre el último valor conocido repetido hacia
+  adelante — señal vieja, no información real del momento.
+- **Ronda 2** (10 combinaciones más, ya sin esas features): mejor resultado
+  **83.69%** con `learning_rate=0.08, max_leaf_nodes=63,
+  l2_regularization=2.0, max_iter=300`.
+
+| Configuración | Accuracy holdout (promedio 4 horizontes) |
+|---|---:|
+| Campeón anterior (`exp-...-001`, con clima/eventos) | 83.14% |
+| Mejor de la ronda 1 (con clima/eventos) | 83.25% |
+| **Mejor de la ronda 2 (sin clima/eventos) — adoptado** | **83.69%** |
+
+Ganancia modesta (+0.55pp) pero consistente en dos búsquedas independientes,
+y el modelo queda más simple (17 features numéricas en vez de 22, sin
+depender de una señal que en producción siempre está desactualizada).
+`src/pipeline.py::HYPERPARAMETERS`/`NUMERIC_FEATURES` ya reflejan esta
+configuración; `pulso_transmi.pipeline._prepare_matrix` no necesitó cambios
+porque reindexa a las columnas que trajo el modelo activo.
+
+Los 23 runs de ambas rondas quedaron loggeados en MLflow
+(`mlruns_search/`, experimento `pulso-transmi-hgb-poisson-search` — no
+committeado, es un experimento exploratorio de una sola vez, no el registro
+de producción en `mlruns/`).
+
 ## Reproducibilidad
 
 Regenerar el modelo desde el API:

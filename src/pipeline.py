@@ -40,19 +40,32 @@ ALGORITHM = "hgb-poisson"
 FEATURE_SET_ID = "pulso-hgb-poisson-features"
 FEATURE_SET_VERSION = "v1"
 
-# Hyperparameters from the accepted experiment (docs/experimentos-modelos.md,
-# exp-20260918-hgb-poisson-001) — the best of the benchmark, not a fresh guess.
+# exp-20260927-hgb-poisson-002 (see docs/experimentos-modelos.md): a 12-run
+# random search plus a same-size follow-up around its best region, both
+# scored on the real 7-day holdout, clustered tightly (83.0-83.7%) — this
+# model isn't hyperparameter-starved. It replaces
+# exp-20260918-hgb-poisson-001's config (max_iter=300, learning_rate=0.06,
+# max_leaf_nodes=31, l2_regularization=1.0), which scored 83.14% on the same
+# holdout, +0.55pp lower.
 HYPERPARAMETERS = {
     "max_iter": 300,
-    "learning_rate": 0.06,
-    "max_leaf_nodes": 31,
-    "l2_regularization": 1.0,
+    "learning_rate": 0.08,
+    "max_leaf_nodes": 63,
+    "l2_regularization": 2.0,
     "random_state": 42,
 }
 
+# rain_mm/rain_forecast/temperature_c/temperature_forecast/event_intensity
+# dropped in the same search: they only ever reflect the frozen dataset
+# history (`context` has no live stream, see build_features), so at predict
+# time they're always the last known value forward-filled — stale signal
+# that cost ~0.5pp of holdout accuracy rather than helping. Predict-time
+# needs no change for this: pulso_transmi.pipeline._prepare_matrix already
+# reindexes to whatever `feature_columns` the active model shipped with, so
+# it drops these columns on its own once a model trained without them is
+# active.
 NUMERIC_FEATURES = (
-    "latitude", "longitude", "rain_mm", "rain_forecast",
-    "temperature_c", "temperature_forecast", "event_intensity",
+    "latitude", "longitude",
     "local_hour", "local_weekday", "is_weekend",
     "lag_1", "lag_4", "lag_16", "lag_96", "lag_672",
     "rolling_mean_4", "rolling_mean_16", "rolling_mean_96", "rolling_mean_672",
@@ -369,27 +382,34 @@ def main() -> None:
         # ver pipeline.yml) en vez de un tracking server, para no montar
         # infraestructura aparte solo para esto. `mlflow ui` desde la raíz
         # del repo muestra el historial completo de reentrenamientos.
-        mlflow.set_tracking_uri(f"file:{MLFLOW_TRACKING_DIR.resolve()}")
-        mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
-        with mlflow.start_run(run_name=model_version):
-            mlflow.set_tags({"algorithm": ALGORITHM, "triggered_by": triggered_by, "dataset": DATASET_VERSION})
-            mlflow.log_params(
-                {
-                    **HYPERPARAMETERS,
-                    "train_start": str(train_start),
-                    "train_end": str(train_end),
-                    "validation_start": str(validation_start),
-                    "validation_end": str(validation_end),
-                    "feature_set_id": FEATURE_SET_ID,
-                }
-            )
-            for horizon_minutes, values in metrics_by_horizon.items():
-                mlflow.log_metric(f"train_rows_{horizon_minutes}min", rows_by_horizon[str(horizon_minutes)])
-                if values["accuracy"] is not None:
-                    mlflow.log_metric(f"accuracy_{horizon_minutes}min", values["accuracy"])
-                    mlflow.log_metric(f"wape_{horizon_minutes}min", values["wape"])
-                    mlflow.log_metric(f"n_val_{horizon_minutes}min", values["n_val"])
-            mlflow.log_artifact(str(METADATA_PATH))
+        # Best-effort: a stale absolute artifact_location in a committed
+        # mlruns/ from a different machine (e.g. CI's /home/runner path,
+        # reused when testing locally) must not block model registration —
+        # same principle as the Supabase calls below.
+        try:
+            mlflow.set_tracking_uri(f"file:{MLFLOW_TRACKING_DIR.resolve()}")
+            mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
+            with mlflow.start_run(run_name=model_version):
+                mlflow.set_tags({"algorithm": ALGORITHM, "triggered_by": triggered_by, "dataset": DATASET_VERSION})
+                mlflow.log_params(
+                    {
+                        **HYPERPARAMETERS,
+                        "train_start": str(train_start),
+                        "train_end": str(train_end),
+                        "validation_start": str(validation_start),
+                        "validation_end": str(validation_end),
+                        "feature_set_id": FEATURE_SET_ID,
+                    }
+                )
+                for horizon_minutes, values in metrics_by_horizon.items():
+                    mlflow.log_metric(f"train_rows_{horizon_minutes}min", rows_by_horizon[str(horizon_minutes)])
+                    if values["accuracy"] is not None:
+                        mlflow.log_metric(f"accuracy_{horizon_minutes}min", values["accuracy"])
+                        mlflow.log_metric(f"wape_{horizon_minutes}min", values["wape"])
+                        mlflow.log_metric(f"n_val_{horizon_minutes}min", values["n_val"])
+                mlflow.log_artifact(str(METADATA_PATH))
+        except Exception as mlflow_exc:
+            print(f"Advertencia: no se pudo registrar el experimento en MLflow: {mlflow_exc}")
 
         if supabase is not None:
             training_run_id, model_version_id = register_training_run(
