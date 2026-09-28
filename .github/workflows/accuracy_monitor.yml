@@ -32,3 +32,11 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: python src/accuracy_monitor.py
+
+      - name: Registrar posición en el leaderboard oficial
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          PULSO_API_KEY: ${{ secrets.PULSO_API_KEY }}
+          PULSO_API_URL: ${{ vars.PULSO_API_URL }}
+        run: python src/leaderboard_monitor.py
