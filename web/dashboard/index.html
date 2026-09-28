@@ -18,12 +18,15 @@
     --border: rgba(18,20,28,0.12);
     --hairline: #e2e5ec;
     --accent: #2a78d6;
+    --pos: #eb6834;
+    --neg: #2a78d6;
     --good: #0ca30c;
     --good-bg: rgba(12,163,12,0.10);
     --serious: #ec835a;
     --serious-bg: rgba(236,131,90,0.14);
     --critical: #d03b3b;
     --critical-bg: rgba(208,59,59,0.10);
+    --seq-200: #9ec5f4;
     --seq-400: #3987e5;
     --seq-600: #184f95;
   }
@@ -39,9 +42,12 @@
       --border: rgba(255,255,255,0.14);
       --hairline: #262a33;
       --accent: #3987e5;
+      --pos: #d95926;
+      --neg: #3987e5;
       --good-bg: rgba(12,163,12,0.16);
       --serious-bg: rgba(236,131,90,0.18);
       --critical-bg: rgba(208,59,59,0.20);
+      --seq-200: #184f95;
       --seq-400: #3987e5;
       --seq-600: #9ec5f4;
     }
@@ -56,12 +62,12 @@
   }
   .mono { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums; }
   .page {
-    max-width: 980px;
+    max-width: 1080px;
     margin: 0 auto;
     padding: max(20px, env(safe-area-inset-top)) 20px max(40px, env(safe-area-inset-bottom));
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 22px;
   }
   header.top {
     display: flex;
@@ -100,10 +106,9 @@
 
   section { display: flex; flex-direction: column; gap: 10px; }
   .section-title { font-size: 13px; font-weight: 600; color: var(--ink-2); margin: 0; }
+  .section-sub { font-size: 11.5px; color: var(--muted); margin: -6px 0 0; }
 
-  .card {
-    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
-  }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
   .banner {
     display: flex; gap: 14px; align-items: flex-start;
     padding: 16px 18px; border-left: 4px solid var(--stripe, var(--good));
@@ -116,6 +121,16 @@
   .banner-title { font-weight: 600; font-size: 14.5px; }
   .banner-desc { font-size: 13px; color: var(--ink-2); line-height: 1.5; max-width: 62ch; margin-top: 2px; }
 
+  /* leaderboard */
+  .lb-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+  .lb-card { padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; }
+  .lb-head { display: flex; justify-content: space-between; align-items: baseline; }
+  .lb-label { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+  .lb-rank { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--ink-2); background: var(--surface-2); border-radius: 999px; padding: 2px 8px; }
+  .lb-value { font-family: "IBM Plex Mono", monospace; font-size: 30px; font-weight: 600; letter-spacing: -0.01em; }
+  .lb-sub { font-size: 12px; color: var(--ink-2); }
+  svg.spark { width: 100%; height: 34px; display: block; overflow: visible; margin-top: 2px; }
+
   .horizon-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
   .horizon-card { padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; }
   .horizon-head { display: flex; justify-content: space-between; align-items: baseline; }
@@ -123,21 +138,68 @@
   .horizon-n { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; color: var(--muted); }
   .horizon-value { font-family: "IBM Plex Mono", monospace; font-size: 26px; font-weight: 600; letter-spacing: -0.01em; }
   .horizon-sub { font-size: 12px; color: var(--ink-2); }
-  svg.spark { width: 100%; height: 34px; display: block; overflow: visible; margin-top: 2px; }
 
-  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  @media (max-width: 640px) { .two-col { grid-template-columns: 1fr; } }
+  .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+  @media (max-width: 760px) { .three-col { grid-template-columns: 1fr; } }
   .info-card { padding: 16px 18px; display: flex; flex-direction: column; gap: 6px; }
   .info-card h3 { font-size: 13px; font-weight: 600; margin: 0 0 2px; }
   .kv { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; padding: 3px 0; border-bottom: 1px dashed var(--hairline); }
   .kv:last-child { border-bottom: none; }
   .kv .k { color: var(--muted); }
   .kv .v { font-family: "IBM Plex Mono", monospace; color: var(--ink); text-align: right; }
+  .status-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 500; padding: 3px 8px; border-radius: 999px; }
+  .status-pill .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .status-pill.good { background: var(--good-bg); color: var(--good); }
+  .status-pill.good .dot { background: var(--good); }
+  .status-pill.critical { background: var(--critical-bg); color: var(--critical); }
+  .status-pill.critical .dot { background: var(--critical); }
+  .status-pill.serious { background: var(--serious-bg); color: var(--serious); }
+  .status-pill.serious .dot { background: var(--serious); }
+
+  /* drift trend */
+  .drift-panel { padding: 16px 18px 14px; display: flex; flex-direction: column; gap: 10px; }
+  svg.chart { width: 100%; height: 130px; display: block; overflow: visible; }
+  .bar { cursor: pointer; }
+  .bar:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .zero-line { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 3; }
+  .tick-label { font-family: "IBM Plex Mono", monospace; font-size: 9.5px; fill: var(--muted); }
+  .chart-wrap { position: relative; }
+  .tooltip {
+    position: absolute; pointer-events: none; background: var(--ink); color: var(--bg);
+    font-family: "IBM Plex Mono", monospace; font-size: 11px; padding: 5px 8px; border-radius: 6px;
+    white-space: nowrap; transform: translate(-50%, -120%); opacity: 0; transition: opacity .1s ease; z-index: 5;
+  }
+  .tooltip.show { opacity: 1; }
+
+  /* stations: map + table */
+  .stations-grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 12px; }
+  @media (max-width: 760px) { .stations-grid { grid-template-columns: 1fr; } }
+  .map-panel { padding: 16px 18px; }
+  svg.map { width: 100%; height: 280px; display: block; }
+  .map-dot { cursor: pointer; }
+  .map-dot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .map-label { font-family: "IBM Plex Mono", monospace; font-size: 9px; fill: var(--ink-2); }
+  .legend-row { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); margin-top: 8px; }
+  .legend-ramp { flex: 1; height: 8px; border-radius: 4px; background: linear-gradient(90deg, var(--critical), var(--serious), var(--seq-400)); }
+
+  .station-table { padding: 6px 0; overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; min-width: 380px; }
+  thead th {
+    text-align: left; font-size: 10px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted);
+    font-weight: 500; padding: 8px 16px; border-bottom: 1px solid var(--hairline); white-space: nowrap;
+  }
+  tbody td { padding: 8px 16px; font-size: 12.5px; border-bottom: 1px solid var(--hairline); white-space: nowrap; }
+  tbody tr:last-child td { border-bottom: none; }
+  td.num { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; text-align: right; }
+
+  /* error histogram */
+  .hist-panel { padding: 16px 18px 14px; }
+  svg.hist { width: 100%; height: 150px; display: block; overflow: visible; }
 
   .empty { padding: 28px 18px; text-align: center; color: var(--muted); font-size: 13px; }
 
   footer { display: flex; flex-direction: column; gap: 8px; padding-top: 6px; border-top: 1px solid var(--hairline); }
-  footer p { font-size: 12px; color: var(--ink-2); line-height: 1.6; margin: 0; max-width: 70ch; }
+  footer p { font-size: 12px; color: var(--ink-2); line-height: 1.6; margin: 0; max-width: 72ch; }
   footer .provenance { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--muted); }
 </style>
 </head>
@@ -166,16 +228,27 @@
   </section>
 
   <section>
+    <p class="section-title">Posición en el leaderboard oficial</p>
+    <div class="lb-grid" id="lb-grid">
+      <div class="card empty">Cargando…</div>
+    </div>
+  </section>
+
+  <section>
     <p class="section-title">Accuracy por horizonte (1 &minus; WAPE, últimas mediciones)</p>
     <div class="horizon-grid" id="horizon-grid">
       <div class="card empty">Cargando…</div>
     </div>
   </section>
 
-  <section class="two-col">
+  <section class="three-col">
     <div class="card info-card">
       <h3>Modelo activo</h3>
       <div id="model-info"><div class="empty">Cargando…</div></div>
+    </div>
+    <div class="card info-card">
+      <h3>Última ejecución del pipeline</h3>
+      <div id="pipeline-info"><div class="empty">Cargando…</div></div>
     </div>
     <div class="card info-card">
       <h3>Última medición de drift</h3>
@@ -183,12 +256,50 @@
     </div>
   </section>
 
+  <section>
+    <p class="section-title">Señales de drift (cambio de media vs. histórico, por medición)</p>
+    <div class="card drift-panel">
+      <div class="chart-wrap" id="chart-drift"></div>
+      <p class="section-sub" id="drift-note"></p>
+    </div>
+  </section>
+
+  <section>
+    <p class="section-title">Estaciones</p>
+    <p class="section-sub" id="stations-sub">Accuracy por estación sobre predicciones ya resueltas (color y tamaño = accuracy; más azul y grande es mejor)</p>
+    <div class="stations-grid">
+      <div class="card map-panel">
+        <div id="map-wrap"></div>
+        <div class="legend-row">
+          <span>0%</span><div class="legend-ramp"></div><span>100%</span>
+        </div>
+      </div>
+      <div class="card station-table">
+        <table>
+          <thead>
+            <tr><th>Estación</th><th>Corredor</th><th>Accuracy</th><th>n</th></tr>
+          </thead>
+          <tbody id="station-body"><tr><td colspan="4" class="empty">Cargando…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="section-title">Distribución de errores (predicciones ya resueltas)</p>
+    <div class="card hist-panel">
+      <div class="chart-wrap" id="chart-hist"></div>
+      <p class="section-sub" id="hist-note"></p>
+    </div>
+  </section>
+
   <footer>
     <p>
-      Cada hora, <span class="mono">accuracy_monitor.py</span> resuelve las predicciones cuyo horizonte ya pasó
-      contra la demanda real recolectada, y calcula accuracy = 1&nbsp;&minus;&nbsp;WAPE por horizonte
-      (15/30/45/60&nbsp;min). Esta página consulta Supabase directamente con la clave pública
-      (<span class="mono">anon</span>, solo lectura vía RLS) y se refresca sola cada 60&nbsp;s.
+      Cada hora, <span class="mono">accuracy_monitor.py</span> resuelve predicciones vencidas contra la demanda real,
+      <span class="mono">drift_monitor.py</span> mide deriva cada 6&nbsp;h (reentrena solo si supera el umbral),
+      y <span class="mono">leaderboard_monitor.py</span> registra nuestra posición oficial cada hora. Esta página
+      consulta Supabase directamente con la clave pública (<span class="mono">anon</span>, solo lectura vía RLS)
+      y se refresca sola cada 60&nbsp;s. La clave privada de la competencia nunca sale del servidor.
     </p>
     <p class="provenance" id="provenance">—</p>
   </footer>
@@ -240,7 +351,7 @@
       '</svg>';
   }
 
-  function severity(row) {
+  function driftSeverity(row) {
     if (!row || !row.drift_detected) return { key: "good", label: "Sin deriva significativa" };
     var mag = Math.abs(row.mean_change_pct || 0);
     if (mag >= 15) return { key: "critical", label: "Deriva severa" };
@@ -254,6 +365,29 @@
   };
   var stripeVars = { good: ["--good", "--good-bg"], serious: ["--serious", "--serious-bg"], critical: ["--critical", "--critical-bg"] };
 
+  function makeTooltip(container) {
+    var tip = document.createElement("div");
+    tip.className = "tooltip";
+    container.appendChild(tip);
+    return tip;
+  }
+  function showTip(tip, x, y, text) { tip.textContent = text; tip.style.left = x + "px"; tip.style.top = y + "px"; tip.classList.add("show"); }
+  function hideTip(tip) { tip.classList.remove("show"); }
+  function wireTooltips(wrap, tip, items) {
+    items.forEach(function (item) {
+      var enter = function () {
+        var box = item.el.getBoundingClientRect();
+        var wrapBox = wrap.getBoundingClientRect();
+        showTip(tip, box.left - wrapBox.left + box.width / 2, box.top - wrapBox.top, item.label);
+      };
+      item.el.addEventListener("mouseenter", enter);
+      item.el.addEventListener("focus", enter);
+      item.el.addEventListener("mouseleave", function () { hideTip(tip); });
+      item.el.addEventListener("blur", function () { hideTip(tip); });
+    });
+  }
+
+  // ---- horizonte (metrics) ----
   function renderHorizons(metrics) {
     var grid = document.getElementById("horizon-grid");
     var byHorizon = {};
@@ -262,13 +396,11 @@
       var match = /^accuracy_(\d+)min$/.exec(m.metric_name);
       if (match) byHorizon[Number(match[1])].push(m);
     });
-
     var anyData = HORIZONS.some(function (h) { return byHorizon[h].length > 0; });
     if (!anyData) {
-      grid.innerHTML = '<div class="card empty">Todavía no hay predicciones resueltas. En cuanto se cumpla un horizonte y el colector traiga la demanda real, aparece aquí (corre cada hora).</div>';
+      grid.innerHTML = '<div class="card empty">Todavía no hay predicciones resueltas. Aparece aquí en cuanto se cumpla un horizonte (corre cada hora).</div>';
       return;
     }
-
     grid.innerHTML = HORIZONS.map(function (h) {
       var rows = byHorizon[h].slice().sort(function (a, b) { return new Date(a.calculated_at) - new Date(b.calculated_at); });
       if (!rows.length) {
@@ -277,9 +409,8 @@
       }
       var latest = rows[rows.length - 1];
       var values = rows.map(function (r) { return r.metric_value; });
-      var totalN = rows.length;
       return '<div class="card horizon-card">' +
-        '<div class="horizon-head"><span class="horizon-label">' + h + ' min</span><span class="horizon-n">n=' + totalN + '</span></div>' +
+        '<div class="horizon-head"><span class="horizon-label">' + h + ' min</span><span class="horizon-n">n=' + rows.length + '</span></div>' +
         '<div class="horizon-value">' + pct(latest.metric_value) + '</div>' +
         '<div class="horizon-sub">último corte: ' + fmtDateTime.format(new Date(latest.calculated_at)) + '</div>' +
         sparkline(values) +
@@ -287,23 +418,34 @@
     }).join("");
   }
 
-  function renderBanner(latestDrift) {
-    var banner = document.getElementById("banner");
-    if (!latestDrift) { banner.hidden = true; return; }
-    banner.hidden = false;
-    var sev = severity(latestDrift);
-    var vars = stripeVars[sev.key];
-    banner.style.setProperty("--stripe", "var(" + vars[0] + ")");
-    banner.style.setProperty("--stripe-bg", "var(" + vars[1] + ")");
-    document.getElementById("banner-badge").innerHTML = badgeIcons[sev.key];
-    document.getElementById("banner-title").textContent = sev.label + " en la demanda";
-    var change = latestDrift.mean_change_pct;
-    document.getElementById("banner-desc").textContent =
-      "La media reciente se movió " + (change >= 0 ? "+" : "") + change.toFixed(1) +
-      "% frente al histórico (p=" + latestDrift.p_value.toFixed(5) + "). Medido " +
-      fmtDateTime.format(new Date(latestDrift.measured_at)) + " (Bogotá).";
+  // ---- leaderboard ----
+  function renderLeaderboard(rows) {
+    var grid = document.getElementById("lb-grid");
+    if (!rows.length) {
+      grid.innerHTML = '<div class="card empty">Todavía no se ha registrado el leaderboard.</div>';
+      return;
+    }
+    var windows = [
+      { key: "cumulative", label: "Acumulado" },
+      { key: "rolling_24h", label: "Últimas 24 h" }
+    ];
+    grid.innerHTML = windows.map(function (w) {
+      var series = rows.filter(function (r) { return r.window_label === w.key; })
+        .sort(function (a, b) { return new Date(a.measured_at) - new Date(b.measured_at); });
+      if (!series.length) return "";
+      var latest = series[series.length - 1];
+      var values = series.map(function (r) { return r.accuracy; });
+      var coverage = latest.coverage != null ? (latest.coverage * 100).toFixed(0) + "%" : "n/d";
+      return '<div class="card lb-card">' +
+        '<div class="lb-head"><span class="lb-label">' + w.label + '</span><span class="lb-rank">#' + latest.rank + ' de ' + latest.participant_count + '</span></div>' +
+        '<div class="lb-value">' + latest.accuracy.toFixed(1) + '%</div>' +
+        '<div class="lb-sub">cobertura ' + coverage + ' &middot; medido ' + fmtDateTime.format(new Date(latest.measured_at)) + '</div>' +
+        sparkline(values) +
+        '</div>';
+    }).join("");
   }
 
+  // ---- modelo / pipeline / drift info cards ----
   function renderModelInfo(model) {
     var el = document.getElementById("model-info");
     if (!model) { el.innerHTML = '<div class="empty">Sin modelo activo</div>'; return; }
@@ -316,6 +458,24 @@
       '<div class="kv"><span class="k">max_iter</span><span class="v">' + (model.hyperparameters && model.hyperparameters.max_iter) + '</span></div>';
   }
 
+  function renderPipelineInfo(row) {
+    var el = document.getElementById("pipeline-info");
+    if (!row) { el.innerHTML = '<div class="empty">Sin ejecuciones registradas</div>'; return; }
+    var pill = { succeeded: "good", failed: "critical", running: "serious", skipped: "serious" }[row.status] || "serious";
+    var label = { succeeded: "Exitosa", failed: "Falló", running: "En curso", skipped: "Omitida" }[row.status] || row.status;
+    var html =
+      '<div class="kv"><span class="k">Estado</span><span class="v"><span class="status-pill ' + pill + '"><span class="dot"></span>' + label + '</span></span></div>' +
+      '<div class="kv"><span class="k">Inició</span><span class="v">' + fmtDateTime.format(new Date(row.started_at)) + '</span></div>';
+    if (row.finished_at) {
+      html += '<div class="kv"><span class="k">Terminó</span><span class="v">' + fmtDateTime.format(new Date(row.finished_at)) + '</span></div>';
+    }
+    if (row.error_message) {
+      html += '<div class="kv"><span class="k">Error</span><span class="v" style="max-width:60%; overflow:hidden; text-overflow:ellipsis;" title="' +
+        row.error_message.replace(/"/g, "&quot;") + '">' + row.error_message.slice(0, 40) + '…</span></div>';
+    }
+    el.innerHTML = html;
+  }
+
   function renderDriftInfo(row) {
     var el = document.getElementById("drift-info");
     if (!row) { el.innerHTML = '<div class="empty">Sin mediciones aún</div>'; return; }
@@ -326,6 +486,193 @@
       '<div class="kv"><span class="k">Muestra reciente</span><span class="v">' + fmtInt.format(row.recent_samples) + '</span></div>';
   }
 
+  function renderBanner(latestDrift) {
+    var banner = document.getElementById("banner");
+    if (!latestDrift) { banner.hidden = true; return; }
+    banner.hidden = false;
+    var sev = driftSeverity(latestDrift);
+    var vars = stripeVars[sev.key];
+    banner.style.setProperty("--stripe", "var(" + vars[0] + ")");
+    banner.style.setProperty("--stripe-bg", "var(" + vars[1] + ")");
+    document.getElementById("banner-badge").innerHTML = badgeIcons[sev.key];
+    document.getElementById("banner-title").textContent = sev.label + " en la demanda";
+    var change = latestDrift.mean_change_pct;
+    document.getElementById("banner-desc").textContent =
+      "La media reciente se movió " + (change >= 0 ? "+" : "") + change.toFixed(1) +
+      "% frente al histórico (p=" + latestDrift.p_value.toFixed(5) + "). Medido " +
+      fmtDateTime.format(new Date(latestDrift.measured_at)) + " (Bogotá).";
+  }
+
+  // ---- drift trend chart (diverging bars) ----
+  function renderDriftTrend(rows) {
+    var wrap = document.getElementById("chart-drift");
+    var note = document.getElementById("drift-note");
+    if (!rows.length) {
+      wrap.innerHTML = '<div class="empty">Sin historial de drift aún.</div>';
+      note.textContent = "";
+      return;
+    }
+    var data = rows.slice().sort(function (a, b) { return new Date(a.measured_at) - new Date(b.measured_at); }).slice(-12);
+    var W = 900, H = 130, padL = 8, padR = 8, padTop = 14, padBottom = 22;
+    var innerW = W - padL - padR;
+    var maxAbs = Math.max(15, Math.max.apply(null, data.map(function (d) { return Math.abs(d.mean_change_pct); })) * 1.2);
+    var zeroY = padTop + (H - padTop - padBottom) / 2;
+    var halfH = (H - padTop - padBottom) / 2;
+    var slot = innerW / Math.max(data.length, 4);
+    var barW = Math.min(34, slot * 0.55);
+
+    var svg = '<svg class="chart" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Cambio de media por medición">';
+    svg += '<line class="zero-line" x1="' + padL + '" y1="' + zeroY + '" x2="' + (W - padR) + '" y2="' + zeroY + '"/>';
+    svg += '<text class="tick-label" x="' + padL + '" y="' + (zeroY - 4) + '">0%</text>';
+    var bars = [];
+    data.forEach(function (d, i) {
+      var cx = padL + slot * (i + 0.5);
+      var v = d.mean_change_pct;
+      var frac = Math.min(1, Math.abs(v) / maxAbs);
+      var barH = Math.max(frac * halfH, 2);
+      var y = v >= 0 ? zeroY - barH : zeroY;
+      var color = Math.abs(v) >= 15 ? "var(--critical)" : (v >= 0 ? "var(--pos)" : "var(--neg)");
+      svg += '<rect class="bar" tabindex="0" x="' + (cx - barW / 2) + '" y="' + y + '" width="' + barW + '" height="' + barH + '" rx="4" fill="' + color + '" data-i="' + i + '"></rect>';
+      var dt = fmtDateTime.format(new Date(d.measured_at));
+      svg += '<text class="tick-label" x="' + cx + '" y="' + (H - 6) + '" text-anchor="middle">' + dt + '</text>';
+      bars.push({ el: null, label: dt + "  " + (v >= 0 ? "+" : "") + v.toFixed(1) + "%" });
+    });
+    svg += '</svg>';
+    wrap.innerHTML = svg;
+    var tip = makeTooltip(wrap);
+    var rects = wrap.querySelectorAll(".bar");
+    var items = [];
+    rects.forEach(function (el, i) { items.push({ el: el, label: bars[i].label }); });
+    wireTooltips(wrap, tip, items);
+    note.textContent = data.length + " mediciones mostradas (más recientes). Rojo = superó el umbral de reentrenamiento automático (15%).";
+  }
+
+  // ---- stations: map + table ----
+  function renderStations(stations, resolvedPredictions) {
+    var byStation = {};
+    resolvedPredictions.forEach(function (p) {
+      byStation[p.station_id] = byStation[p.station_id] || { errSum: 0, actualSum: 0, n: 0 };
+      var b = byStation[p.station_id];
+      b.errSum += Math.abs(p.absolute_error);
+      b.actualSum += p.actual_demand;
+      b.n += 1;
+    });
+
+    var mapWrap = document.getElementById("map-wrap");
+    var tbody = document.getElementById("station-body");
+
+    if (!stations.length) {
+      mapWrap.innerHTML = '<div class="empty">Sin estaciones.</div>';
+      tbody.innerHTML = '<tr><td colspan="4" class="empty">Sin datos.</td></tr>';
+      return;
+    }
+
+    var lats = stations.map(function (s) { return s.latitude; });
+    var lons = stations.map(function (s) { return s.longitude; });
+    var minLat = Math.min.apply(null, lats), maxLat = Math.max.apply(null, lats);
+    var minLon = Math.min.apply(null, lons), maxLon = Math.max.apply(null, lons);
+    var padFrac = 0.15;
+    var latRange = Math.max(maxLat - minLat, 0.001), lonRange = Math.max(maxLon - minLon, 0.001);
+    minLat -= latRange * padFrac; maxLat += latRange * padFrac;
+    minLon -= lonRange * padFrac; maxLon += lonRange * padFrac;
+    latRange = maxLat - minLat; lonRange = maxLon - minLon;
+
+    var W = 480, H = 280;
+    function project(lat, lon) {
+      var x = ((lon - minLon) / lonRange) * W;
+      var y = H - ((lat - minLat) / latRange) * H; // lat crece hacia arriba
+      return [x, y];
+    }
+
+    var rows = stations.map(function (s) {
+      var b = byStation[s.station_id];
+      var acc = b && b.actualSum > 0 ? Math.max(0, 1 - b.errSum / b.actualSum) : null;
+      return { station: s, acc: acc, n: b ? b.n : 0 };
+    });
+
+    var svg = '<svg class="map" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Mapa de estaciones">';
+    rows.forEach(function (r, i) {
+      var xy = project(r.station.latitude, r.station.longitude);
+      var color = r.acc == null ? "var(--muted)" : (r.acc >= 0.7 ? "var(--seq-400)" : (r.acc >= 0.4 ? "var(--serious)" : "var(--critical)"));
+      var radius = r.acc == null ? 5 : 6 + r.acc * 6;
+      svg += '<circle class="map-dot" tabindex="0" cx="' + xy[0].toFixed(1) + '" cy="' + xy[1].toFixed(1) + '" r="' + radius.toFixed(1) +
+        '" fill="' + color + '" fill-opacity="0.85" stroke="var(--surface)" stroke-width="1.5" data-i="' + i + '"></circle>';
+      svg += '<text class="map-label" x="' + (xy[0] + radius + 3).toFixed(1) + '" y="' + (xy[1] + 3).toFixed(1) + '">' + r.station.station_id + '</text>';
+    });
+    svg += '</svg>';
+    mapWrap.innerHTML = svg;
+    var tip = makeTooltip(mapWrap);
+    var dots = mapWrap.querySelectorAll(".map-dot");
+    var items = [];
+    dots.forEach(function (el, i) {
+      var r = rows[i];
+      var label = r.station.station_name + (r.acc != null ? "  " + pct(r.acc) + " (n=" + r.n + ")" : "  sin datos");
+      items.push({ el: el, label: label });
+    });
+    wireTooltips(mapWrap, tip, items);
+
+    rows.sort(function (a, b) { return (b.acc || -1) - (a.acc || -1); });
+    tbody.innerHTML = rows.map(function (r) {
+      return '<tr><td>' + r.station.station_name + '</td><td>' + r.station.corridor + '</td>' +
+        '<td class="num">' + (r.acc != null ? pct(r.acc) : "—") + '</td><td class="num">' + r.n + '</td></tr>';
+    }).join("");
+  }
+
+  // ---- error histogram ----
+  function renderErrorHistogram(resolvedPredictions) {
+    var wrap = document.getElementById("chart-hist");
+    var note = document.getElementById("hist-note");
+    var pctErrors = resolvedPredictions
+      .filter(function (p) { return p.actual_demand > 0; })
+      .map(function (p) { return Math.min(150, (Math.abs(p.absolute_error) / p.actual_demand) * 100); });
+
+    if (!pctErrors.length) {
+      wrap.innerHTML = '<div class="empty">Todavía no hay predicciones resueltas para medir error.</div>';
+      note.textContent = "";
+      return;
+    }
+
+    var bins = [0, 10, 20, 30, 40, 60, 80, 100, 150];
+    var counts = new Array(bins.length - 1).fill(0);
+    pctErrors.forEach(function (e) {
+      for (var i = 0; i < bins.length - 1; i++) {
+        if (e >= bins[i] && e < bins[i + 1]) { counts[i]++; break; }
+        if (i === bins.length - 2 && e >= bins[i + 1]) counts[i]++;
+      }
+    });
+
+    var W = 900, H = 150, padL = 8, padR = 8, padTop = 10, padBottom = 24;
+    var innerH = H - padTop - padBottom, innerW = W - padL - padR;
+    var maxCount = Math.max.apply(null, counts) || 1;
+    var slot = innerW / counts.length;
+    var barW = slot * 0.7;
+    var baseY = H - padBottom;
+
+    var svg = '<svg class="hist" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Distribución de errores porcentuales">';
+    svg += '<line class="zero-line" x1="' + padL + '" y1="' + baseY + '" x2="' + (W - padR) + '" y2="' + baseY + '"/>';
+    var items = [];
+    counts.forEach(function (c, i) {
+      var cx = padL + slot * (i + 0.5);
+      var barH = Math.max((c / maxCount) * innerH, c > 0 ? 2 : 0);
+      var y = baseY - barH;
+      var label = bins[i] + (i === bins.length - 2 ? "%+" : "-" + bins[i + 1] + "%");
+      svg += '<rect class="bar" tabindex="0" x="' + (cx - barW / 2).toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + barW.toFixed(1) +
+        '" height="' + barH.toFixed(1) + '" rx="3" fill="var(--seq-400)" data-i="' + i + '"></rect>';
+      svg += '<text class="tick-label" x="' + cx.toFixed(1) + '" y="' + (H - 8) + '" text-anchor="middle">' + label + '</text>';
+      items.push({ el: null, label: c + " predicciones (" + label + " de error)" });
+    });
+    svg += '</svg>';
+    wrap.innerHTML = svg;
+    var tip = makeTooltip(wrap);
+    var rects = wrap.querySelectorAll(".bar");
+    var wired = [];
+    rects.forEach(function (el, i) { wired.push({ el: el, label: items[i].label }); });
+    wireTooltips(wrap, tip, wired);
+
+    var median = pctErrors.slice().sort(function (a, b) { return a - b; })[Math.floor(pctErrors.length / 2)];
+    note.textContent = pctErrors.length + " predicciones resueltas · error porcentual mediano: " + median.toFixed(1) + "%";
+  }
+
   function load() {
     var label = document.getElementById("live-label");
     label.textContent = "actualizando…";
@@ -333,16 +680,28 @@
     Promise.all([
       rest("metrics?select=metric_name,metric_value,calculated_at&order=calculated_at.desc&limit=200"),
       rest("model_versions?select=algorithm,hyperparameters,artifact_uri,trained_at&is_active=eq.true&limit=1"),
-      rest("model_drift_log?select=*&order=measured_at.desc&limit=1")
+      rest("model_drift_log?select=*&order=measured_at.desc&limit=12"),
+      rest("leaderboard_log?select=*&order=measured_at.desc&limit=60"),
+      rest("pipeline_executions?select=*&order=started_at.desc&limit=1"),
+      rest("stations?select=station_id,station_name,corridor,latitude,longitude"),
+      rest("predictions?select=station_id,absolute_error,actual_demand&actual_demand=not.is.null&order=target_at.desc&limit=1000")
     ]).then(function (results) {
-      var metrics = results[0], models = results[1], drift = results[2];
+      var metrics = results[0], models = results[1], drift = results[2], leaderboard = results[3],
+          pipelineExec = results[4], stations = results[5], resolved = results[6];
+
       renderHorizons(metrics);
       renderModelInfo(models[0]);
+      renderPipelineInfo(pipelineExec[0]);
       renderDriftInfo(drift[0]);
       renderBanner(drift[0]);
+      renderDriftTrend(drift);
+      renderLeaderboard(leaderboard);
+      renderStations(stations, resolved);
+      renderErrorHistogram(resolved);
+
       label.textContent = "en vivo · " + fmtTime.format(new Date()) + " (Bogotá)";
       document.getElementById("provenance").textContent =
-        "accuracy_monitor.py (cada hora) + drift_monitor.py (cada 6 h) → Supabase → esta página, consulta directa cada 60 s";
+        "accuracy_monitor.py + leaderboard_monitor.py (cada hora) + drift_monitor.py (cada 6 h) → Supabase → esta página, consulta directa cada 60 s";
     }).catch(function (err) {
       label.textContent = "sin conexión";
       console.error(err);
