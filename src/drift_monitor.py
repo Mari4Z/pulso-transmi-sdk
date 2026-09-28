@@ -30,6 +30,36 @@ def _write_severe_output(severe: bool) -> None:
         fh.write(f"severe_drift={'true' if severe else 'false'}\n")
 
 
+def _drift_row(recent_vals, hist_vals, feature: str, station_id: str | None, measured_at: str) -> dict | None:
+    if recent_vals.empty or hist_vals.empty:
+        return None
+    stat, p_value = ks_2samp(hist_vals, recent_vals)
+    historical_mean = float(hist_vals.mean())
+    recent_mean = float(recent_vals.mean())
+    historical_std = float(hist_vals.std())
+    recent_std = float(recent_vals.std())
+    return {
+        "feature": feature,
+        "station_id": station_id,
+        "ks_stat": float(stat),
+        "p_value": float(p_value),
+        "drift_detected": bool(p_value < 0.05),
+        "measured_at": measured_at,
+        "historical_mean": historical_mean,
+        "recent_mean": recent_mean,
+        "mean_change_pct": _pct_change(historical_mean, recent_mean),
+        "historical_std": historical_std,
+        "recent_std": recent_std,
+        "std_change_pct": _pct_change(historical_std, recent_std),
+        "recent_samples": int(len(recent_vals)),
+        "historical_samples": int(len(hist_vals)),
+    }
+
+
+def _is_severe(row: dict) -> bool:
+    return bool(row["drift_detected"] and abs(row["mean_change_pct"] or 0) >= SEVERE_MEAN_CHANGE_PCT)
+
+
 def main() -> None:
     print("Iniciando monitor de drift...")
     print("Descargando observaciones...")
@@ -58,42 +88,23 @@ def main() -> None:
         _write_severe_output(False)
         return
 
-    features_to_monitor = ["demand"]
+    measured_at = str(datetime.now(timezone.utc))
+    feature = "demand"
     drift_logs = []
 
-    for feature in features_to_monitor:
-        if feature not in recent.columns or feature not in historical.columns:
-            continue
-        recent_vals = recent[feature].dropna()
-        hist_vals = historical[feature].dropna()
-        if recent_vals.empty or hist_vals.empty:
-            continue
+    aggregate = _drift_row(recent[feature].dropna(), historical[feature].dropna(), feature, None, measured_at)
+    if aggregate is not None:
+        drift_logs.append(aggregate)
 
-        stat, p_value = ks_2samp(hist_vals, recent_vals)
-        drift_detected = bool(p_value < 0.05)
-
-        historical_mean = float(hist_vals.mean())
-        recent_mean = float(recent_vals.mean())
-        historical_std = float(hist_vals.std())
-        recent_std = float(recent_vals.std())
-
-        drift_logs.append(
-            {
-                "feature": feature,
-                "ks_stat": float(stat),
-                "p_value": float(p_value),
-                "drift_detected": drift_detected,
-                "measured_at": str(datetime.now(timezone.utc)),
-                "historical_mean": historical_mean,
-                "recent_mean": recent_mean,
-                "mean_change_pct": _pct_change(historical_mean, recent_mean),
-                "historical_std": historical_std,
-                "recent_std": recent_std,
-                "std_change_pct": _pct_change(historical_std, recent_std),
-                "recent_samples": int(len(recent_vals)),
-                "historical_samples": int(len(hist_vals)),
-            }
-        )
+    # Per-station: the aggregate pools all 12 stations, so a real, isolated
+    # shift at just one of them (e.g. Banderas/05100's own demand collapse)
+    # gets diluted into a system-wide reading of a few percent and never
+    # crosses SEVERE_MEAN_CHANGE_PCT. A station-level check catches that.
+    for station_id, recent_group in recent.groupby("station_id"):
+        hist_group = historical[historical["station_id"] == station_id]
+        row = _drift_row(recent_group[feature].dropna(), hist_group[feature].dropna(), feature, station_id, measured_at)
+        if row is not None:
+            drift_logs.append(row)
 
     if not drift_logs:
         print("No se pudo calcular drift para ninguna feature.")
@@ -104,15 +115,16 @@ def main() -> None:
     for log in drift_logs:
         mean_change = log["mean_change_pct"]
         change_str = f"{mean_change:+.1f}%" if mean_change is not None else "n/a"
+        scope = log["station_id"] or "agregado (12 estaciones)"
         print(
-            f"  {log['feature']}: Drift={'Si' if log['drift_detected'] else 'No'} "
+            f"  [{scope}] {log['feature']}: Drift={'Si' if log['drift_detected'] else 'No'} "
             f"(p={log['p_value']:.4f}, ks={log['ks_stat']:.4f}, cambio_media={change_str})"
         )
 
-    severe = any(
-        log["drift_detected"] and abs(log["mean_change_pct"] or 0) >= SEVERE_MEAN_CHANGE_PCT
-        for log in drift_logs
-    )
+    severe = any(_is_severe(log) for log in drift_logs)
+    severe_stations = [log["station_id"] for log in drift_logs if log["station_id"] and _is_severe(log)]
+    if severe_stations:
+        print(f"  Drift severo aislado en: {', '.join(severe_stations)}")
     print(f"¿Drift severo (retrain automático)? {'Sí' if severe else 'No'}")
     _write_severe_output(severe)
 
