@@ -1,5 +1,5 @@
 {
-  "model_version": "hgb-poisson-20260927T212729Z",
+  "model_version": "hgb-poisson-20260928T023746Z",
   "model": "HistGradientBoostingRegressor",
   "loss": "poisson",
   "parameters": {
@@ -16,8 +16,8 @@
     60
   ],
   "dataset": "pulso-transmi-starter-v1",
-  "training_cutoff": "2026-09-08T10:30:00+00:00",
-  "created_at": "2026-09-27T21:27:29.964835+00:00",
+  "training_cutoff": "2026-09-08T15:30:00+00:00",
+  "created_at": "2026-09-28T02:37:46.448986+00:00",
   "feature_columns": [
     "latitude",
     "longitude",
@@ -33,9 +33,6 @@
     "rolling_mean_16",
     "rolling_mean_96",
     "rolling_mean_672",
-    "station_mean",
-    "station_hour_mean",
-    "station_weekday_hour_mean",
     "station_id_02300",
     "station_id_03000",
     "station_id_05000",
@@ -57,33 +54,33 @@
     "corridor_Suba"
   ],
   "training_rows_by_horizon": {
-    "15": 42876,
-    "30": 42864,
-    "45": 42852,
-    "60": 42840
+    "15": 43116,
+    "30": 43104,
+    "45": 43092,
+    "60": 43080
   },
   "validation_metrics": {
     "15": {
-      "wape": 0.16937795535376235,
-      "accuracy": 0.8306220446462377,
+      "wape": 0.1657745579924494,
+      "accuracy": 0.8342254420075506,
       "n_val": 8076
     },
     "30": {
-      "wape": 0.1749481172625753,
-      "accuracy": 0.8250518827374247,
+      "wape": 0.17146292056349902,
+      "accuracy": 0.828537079436501,
       "n_val": 8076
     },
     "45": {
-      "wape": 0.17988235923523893,
-      "accuracy": 0.820117640764761,
+      "wape": 0.17806716053399066,
+      "accuracy": 0.8219328394660094,
       "n_val": 8076
     },
     "60": {
-      "wape": 0.18276624261755117,
-      "accuracy": 0.8172337573824489,
+      "wape": 0.18444526933900596,
+      "accuracy": 0.815554730660994,
       "n_val": 8076
     }
   },
   "random_state": 42,
-  "triggered_by": "drift"
+  "triggered_by": "drift-per-station-fix"
 }
