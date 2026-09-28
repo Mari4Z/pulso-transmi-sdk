@@ -76,6 +76,43 @@ Los 23 runs de ambas rondas quedaron loggeados en MLflow
 committeado, es un experimento exploratorio de una sola vez, no el registro
 de producción en `mlruns/`).
 
+## exp-20260928-hgb-poisson-003: quitar promedios lentos por estación
+
+Motivado por una pregunta puntual: la estación Banderas (`05100`) predecía
+muy mal (accuracy 4-15% en predicciones reales resueltas, vs. 60-74% en
+las otras 11 estaciones). La causa: Banderas tuvo una caída real de
+demanda de ~47% (~592 → ~315 pasajeros/15min) a partir del 13-sep, y
+`station_mean`/`station_hour_mean`/`station_weekday_hour_mean` son
+promedios sobre *todo* el histórico de entrenamiento — con 45 días de
+histórico estático más un stream que recién empieza a crecer, esas
+features tardan mucho en "olvidar" el nivel viejo, así que seguían
+ancladas a ~592 mientras la demanda real ya estaba en ~315.
+
+Dos enfoques probados contra el mismo holdout, midiendo tanto el WAPE
+general como el de Banderas específicamente en los 2 días posteriores a
+la caída (donde el efecto es más agudo):
+
+| Enfoque | WAPE general (foco) | Accuracy Banderas (foco) |
+|---|---:|---:|
+| Actual (promedios sobre todo el histórico) | 26.4% | 0.0% |
+| Ventana de 3-21 días para esas 3 features | ~26.0-26.3% | 0.0% (sin cambio) |
+| **Quitar las 3 features por completo — adoptado** | **23.4%** | **23.5%** |
+
+Ventanear no funcionó: con una ventana corta, muchas combinaciones
+estación×día-de-semana×hora quedan sin ninguna observación, así que esas
+filas de entrenamiento se descartan por completo (arrastra el problema en
+vez de resolverlo). Quitar las features por completo sí ayuda, y en las
+dos dimensiones a la vez — el modelo se queda con `lag_1/4/16/96/672` y
+`rolling_mean_4/16/96/672`, que ya reaccionan al nivel de demanda actual
+sin depender de un promedio histórico lento.
+
+`NUMERIC_FEATURES` en `src/pipeline.py` ya no incluye esas 3 columnas.
+`add_training_statistics()` se mantiene solo porque `src/inference.py`
+todavía la importa; no tiene efecto en el modelo entrenado porque esas
+columnas ya no están en `NUMERIC_FEATURES`. Tampoco requirió cambios en
+`pulso_transmi/pipeline.py` — `_prepare_matrix` reindexa a las columnas
+del modelo activo, igual que en `exp-...-002`.
+
 ## Reproducibilidad
 
 Regenerar el modelo desde el API:

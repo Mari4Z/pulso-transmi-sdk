@@ -64,12 +64,26 @@ HYPERPARAMETERS = {
 # reindexes to whatever `feature_columns` the active model shipped with, so
 # it drops these columns on its own once a model trained without them is
 # active.
+# station_mean/station_hour_mean/station_weekday_hour_mean dropped here
+# (exp-20260928-hgb-poisson-003, docs/experimentos-modelos.md): they're
+# plain averages over the *entire* training window, so when a station's
+# demand level actually shifts (Banderas/05100 collapsed ~47% around
+# 2026-09-13, isolated to that one station), they keep anchoring
+# predictions to the old level for as long as the old regime's rows still
+# outnumber the new ones — which, given how much history 45 days of static
+# data plus a slowly growing live stream produce, is a long time. Windowing
+# them to a recent slice doesn't fix it either: a short window doesn't have
+# enough (station, weekday, hour) coverage, so rows whose combination falls
+# outside it get an all-NaN lookup and are dropped from training entirely.
+# Tested on the 2 days right after the collapse: dropping these features
+# improved both the system-wide WAPE (26.4%->23.4%) and Banderas'
+# specifically (accuracy 0%->23.5%) — the lag/rolling_mean features already
+# carry the responsive, recent signal these were duplicating less well.
 NUMERIC_FEATURES = (
     "latitude", "longitude",
     "local_hour", "local_weekday", "is_weekend",
     "lag_1", "lag_4", "lag_16", "lag_96", "lag_672",
     "rolling_mean_4", "rolling_mean_16", "rolling_mean_96", "rolling_mean_672",
-    "station_mean", "station_hour_mean", "station_weekday_hour_mean",
 )
 CATEGORICAL_FEATURES = ("station_id", "corridor")
 
@@ -99,6 +113,10 @@ def build_features(observations: pd.DataFrame, stations: pd.DataFrame, context: 
     return frame
 
 
+# No longer called from train_and_evaluate (see the NUMERIC_FEATURES note
+# above) — kept only because src/inference.py still imports and calls it.
+# Harmless either way: the columns it adds aren't in NUMERIC_FEATURES, so
+# prepare_matrix() never selects them.
 def add_training_statistics(train: pd.DataFrame, target: pd.Series, frame: pd.DataFrame) -> pd.DataFrame:
     frame = frame.copy()
     station_mean = train.assign(target=target).groupby("station_id")["target"].mean()
@@ -169,8 +187,6 @@ def train_and_evaluate(
             (eligible["target_at"] >= cutoff) & (eligible["target_at"] <= validation_end)
         ].copy()
 
-        train_rows = add_training_statistics(train_rows, train_rows["target"], train_rows)
-        val_rows = add_training_statistics(train_rows, train_rows["target"], val_rows)
         train_rows = train_rows.dropna(subset=list(NUMERIC_FEATURES)).copy()
         val_rows = val_rows.dropna(subset=list(NUMERIC_FEATURES)).copy()
 
