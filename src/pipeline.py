@@ -79,11 +79,22 @@ HYPERPARAMETERS = {
 # improved both the system-wide WAPE (26.4%->23.4%) and Banderas'
 # specifically (accuracy 0%->23.5%) — the lag/rolling_mean features already
 # carry the responsive, recent signal these were duplicating less well.
+# exp-20260928-hgb-poisson-004 (docs/experimentos-modelos.md): trend_16/
+# trend_96 (lag_1 minus the matching rolling_mean) tell the model how far
+# the *current* reading sits from its recent baseline, instead of just
+# handing it the lag and the mean separately and leaving it to infer the
+# gap. Improved holdout accuracy system-wide (81.78%->82.38%) and,
+# tellingly, more so at Banderas specifically (75.39%->77.31%) — the same
+# station exp-003 targeted, so this compounds with dropping the slow
+# station averages rather than duplicating that fix. rolling_std_*/
+# hour_sin+cos were tested alongside and didn't clear the noise floor on
+# their own, so they were left out.
 NUMERIC_FEATURES = (
     "latitude", "longitude",
     "local_hour", "local_weekday", "is_weekend",
     "lag_1", "lag_4", "lag_16", "lag_96", "lag_672",
     "rolling_mean_4", "rolling_mean_16", "rolling_mean_96", "rolling_mean_672",
+    "trend_16", "trend_96",
 )
 CATEGORICAL_FEATURES = ("station_id", "corridor")
 
@@ -110,6 +121,8 @@ def build_features(observations: pd.DataFrame, stations: pd.DataFrame, context: 
         frame[f"rolling_mean_{window}"] = (
             demand_by_station.shift(1).rolling(window).mean().reset_index(level=0, drop=True)
         )
+    frame["trend_16"] = frame["lag_1"] - frame["rolling_mean_16"]
+    frame["trend_96"] = frame["lag_1"] - frame["rolling_mean_96"]
     return frame
 
 

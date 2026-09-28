@@ -113,6 +113,45 @@ columnas ya no están en `NUMERIC_FEATURES`. Tampoco requirió cambios en
 `pulso_transmi/pipeline.py` — `_prepare_matrix` reindexa a las columnas
 del modelo activo, igual que en `exp-...-002`.
 
+## exp-20260928-hgb-poisson-004: features de tendencia reciente
+
+Con exp-003 ya en producción, se buscó margen adicional de mejora
+comparando 5 variantes de features contra el mismo holdout (últimos 7
+días reales, accuracy = 1 − WAPE promediado entre los 4 horizontes),
+partiendo del set de exp-003 (sin `station_mean`/`station_hour_mean`/
+`station_weekday_hour_mean`, sin clima/eventos):
+
+| Variante | Accuracy general | Accuracy Banderas (05100) |
+|---|---:|---:|
+| Baseline (exp-003, en producción) | 81.78% | 75.39% |
+| + `rolling_std_4/16/96` (volatilidad) | 81.94% | 76.12% |
+| + `hour_sin`/`hour_cos` (hora cíclica) | 81.83% | 75.02% |
+| **+ `trend_16`/`trend_96` — adoptado** | **82.38%** | **77.09%** |
+| + las tres combinadas | 82.40% | 77.31% |
+
+`trend_16`/`trend_96` son `lag_1 − rolling_mean_16` y
+`lag_1 − rolling_mean_96`: en vez de dejar que el modelo infiera por su
+cuenta qué tan lejos está la lectura actual de su nivel reciente (con
+`lag_1` y `rolling_mean_*` como columnas separadas), se lo entrega ya
+calculado. La ganancia es consistente en las dos dimensiones que importan
+— general y, más pronunciada, en Banderas — así que complementa el fix de
+exp-003 en vez de duplicarlo. `rolling_std_*` y `hour_sin`/`hour_cos` no
+superan el ruido por sí solos (incluso `hour_sin`/`hour_cos` empeora
+Banderas ligeramente) y combinarlos con `trend_*` no suma más allá del
+margen de error (82.38% → 82.40%), así que se dejaron fuera para no
+sumar columnas sin beneficio claro.
+
+Se repitió además la búsqueda de hiperparámetros (6 combinaciones
+alrededor del campeón actual) sobre este set con `trend_*` ya incluido:
+resultados apretados entre 82.28% y 82.41% — confirma lo ya visto en
+`exp-...-002`, el modelo no está limitado por hiperparámetros, así que
+`HYPERPARAMETERS` en `src/pipeline.py` no cambió.
+
+`NUMERIC_FEATURES` en `src/pipeline.py` y `build_features()` en
+`pulso_transmi/pipeline.py` (usado en predicción real, no solo en
+entrenamiento) ambos calculan ahora `trend_16`/`trend_96` — necesario
+para que `_prepare_matrix` no las rellene con `0.0` al no encontrarlas.
+
 ## Reproducibilidad
 
 Regenerar el modelo desde el API:

@@ -96,6 +96,13 @@ def build_features(
             .mean()
             .reset_index(level=0, drop=True)
         )
+    # Must mirror src/pipeline.py::build_features (exp-20260928-hgb-poisson-004):
+    # _prepare_matrix below reindexes to whatever feature_columns the active
+    # model shipped with, filling anything missing with 0.0 — a model trained
+    # with trend_16/trend_96 would silently get 0.0 instead of the real value
+    # here if this branch didn't compute them too.
+    frame["trend_16"] = frame["lag_1"] - frame["rolling_mean_16"]
+    frame["trend_96"] = frame["lag_1"] - frame["rolling_mean_96"]
     return frame
 
 
