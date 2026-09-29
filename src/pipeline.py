@@ -218,11 +218,22 @@ def train_and_evaluate(
         y_val = val_rows.pop("target")
         X_val = prepare_matrix(val_rows).reindex(columns=feature_columns, fill_value=0.0)
         preds = model.predict(X_val)
-        actual_sum = float(y_val.sum())
-        if actual_sum <= 0:
+        # Métrica oficial: WAPE por estación, luego promediado — no agregado
+        # sobre todas las estaciones (ver accuracy_monitor.py). Con demandas
+        # muy distintas entre estaciones, agregar primero deja que las de
+        # mayor demanda dominen el número; promediar por estación las pesa
+        # por igual, igual que el leaderboard.
+        errors = (y_val - preds).abs()
+        station_wapes = []
+        for station_id, station_actual in y_val.groupby(val_rows["station_id"]).sum().items():
+            if station_actual <= 0:
+                continue
+            station_error = errors[val_rows["station_id"] == station_id].sum()
+            station_wapes.append(float(station_error / station_actual))
+        if not station_wapes:
             metrics_by_horizon[horizon_minutes] = {"wape": None, "accuracy": None, "n_val": len(val_rows)}
             continue
-        wape = float((y_val - preds).abs().sum() / actual_sum)
+        wape = sum(station_wapes) / len(station_wapes)
         metrics_by_horizon[horizon_minutes] = {
             "wape": wape,
             "accuracy": max(0.0, 1 - wape),

@@ -123,8 +123,13 @@ def main() -> None:
             "submission_status": "accepted",
         }).eq("prediction_id", row["prediction_id"]).execute()
 
-    # Accuracy por horizonte ("4 tiempos": 15/30/45/60 min), estilo
-    # docs/experimentos-modelos.md: WAPE = sum|error| / sum(actual).
+    # Accuracy por horizonte ("4 tiempos": 15/30/45/60 min). Métrica oficial
+    # (docs/automation upstream / README del template): WAPE se calcula por
+    # estación y luego se promedia — no agregado sobre todas las estaciones
+    # a la vez. Con demandas muy distintas entre estaciones (Banderas ~300
+    # vs. otras ~1500), agregar primero deja que las estaciones de mayor
+    # demanda dominen el WAPE; promediar por estación pesa a todas por
+    # igual, igual que el leaderboard oficial.
     by_horizon: dict[tuple[str, int], list[dict]] = defaultdict(list)
     for row in resolved:
         by_horizon[(row["model_version_id"], row["horizon_steps"])].append(row)
@@ -132,11 +137,19 @@ def main() -> None:
     measured_at = datetime.now(timezone.utc)
     metric_rows = []
     for (model_version_id, horizon_steps), rows in by_horizon.items():
-        actual_sum = sum(r["actual_demand"] for r in rows)
-        if actual_sum <= 0:
+        by_station: dict[str, list[dict]] = defaultdict(list)
+        for row in rows:
+            by_station[row["station_id"]].append(row)
+        station_wapes = []
+        for station_rows in by_station.values():
+            actual_sum = sum(r["actual_demand"] for r in station_rows)
+            if actual_sum <= 0:
+                continue
+            abs_error_sum = sum(abs(r["actual_demand"] - r["predicted_demand"]) for r in station_rows)
+            station_wapes.append(abs_error_sum / actual_sum)
+        if not station_wapes:
             continue
-        abs_error_sum = sum(abs(r["actual_demand"] - r["predicted_demand"]) for r in rows)
-        wape = abs_error_sum / actual_sum
+        wape = sum(station_wapes) / len(station_wapes)
         accuracy = max(0.0, 1 - wape)
         window_start = min(r["target_at"] for r in rows)
         window_end = max(r["target_at"] for r in rows)
