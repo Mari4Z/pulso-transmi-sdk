@@ -27,6 +27,14 @@ class PipelineError(RuntimeError):
     pass
 
 
+class CycleClosedError(PipelineError):
+    """The cycle closed between get_current_cycle() and submit() — a race,
+    not a real failure: cycles here are short-lived (see closes_at) and a
+    10-minute external cron can legitimately land right on that edge. Not
+    worth failing the whole job over; the next run picks up whatever cycle
+    is open next."""
+
+
 def _git_commit() -> str:
     value = os.getenv("GITHUB_SHA")
     if value:
@@ -231,6 +239,13 @@ def submit(
         headers={**_request_headers(api_key), "Content-Type": "application/json", "Idempotency-Key": idempotency_key},
         json=payload,
     )
+    if response.status_code == 409:
+        try:
+            code = response.json().get("detail", {}).get("code")
+        except ValueError:
+            code = None
+        if code == "cycle_closed":
+            raise CycleClosedError(f"cycle {cycle['cycle_id']} closed before submission: {response.text[:500]}")
     if response.status_code not in (200, 201):
         raise PipelineError(f"POST /v1/submissions failed with HTTP {response.status_code}: {response.text[:500]}")
     return {"idempotency_key": idempotency_key, "response": response.json()}
@@ -315,7 +330,11 @@ def main() -> None:
             stations = client.stations()
             context = client.context_dataframe(page_size=5000)
         predictions = predict_targets(cycle, observations, stations, context, package)
-        result = submit(base_url, api_key, cycle, model_metadata, predictions, http_client)
+        try:
+            result = submit(base_url, api_key, cycle, model_metadata, predictions, http_client)
+        except CycleClosedError as exc:
+            print(f"ciclo cerrado antes de poder enviar, se omite este ciclo: {exc}")
+            return
     record_predictions(cycle.get("targets", []), predictions)
     receipt = {
         "cycle_id": cycle["cycle_id"],
