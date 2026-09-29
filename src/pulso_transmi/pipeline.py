@@ -22,6 +22,18 @@ HORIZONS = (15, 30, 45, 60)
 # model_versions row this reads back.
 ALGORITHM = "hgb-poisson"
 
+# exp-20260929-shock-blend (docs/experimentos-modelos.md): the trained
+# model lags a genuine regime shift by however long it takes for enough
+# post-shift rows to accumulate and get retrained on, while a naive
+# persistence forecast (last observed value) has zero such lag — it just
+# *is* the new level. Blending a modest slice of the model's own lag_1
+# feature into its prediction costs ~0.1pp on calm holdout data but wins
+# ~5pp during a live regime shift, which is when it matters most (see
+# docs). Must match NAIVE_BLEND_WEIGHT in src/pipeline.py — that's what
+# train_and_evaluate() scores against, so the reported holdout metrics
+# match what actually gets submitted here.
+NAIVE_BLEND_WEIGHT = 0.25
+
 
 class PipelineError(RuntimeError):
     pass
@@ -176,7 +188,9 @@ def predict_targets(
         if row.empty or horizon not in HORIZONS:
             raise PipelineError(f"cannot predict station={station_id} horizon={horizon}")
         matrix = _prepare_matrix(row, feature_columns)
-        value = float(models[horizon // 15].predict(matrix)[0])
+        model_value = float(models[horizon // 15].predict(matrix)[0])
+        naive_value = float(row["lag_1"].iloc[0])
+        value = (1 - NAIVE_BLEND_WEIGHT) * model_value + NAIVE_BLEND_WEIGHT * naive_value
         predictions.append(
             {
                 "station_id": station_id,

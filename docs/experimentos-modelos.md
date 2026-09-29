@@ -152,6 +152,55 @@ resultados apretados entre 82.28% y 82.41% — confirma lo ya visto en
 entrenamiento) ambos calculan ahora `trend_16`/`trend_96` — necesario
 para que `_prepare_matrix` no las rellene con `0.0` al no encontrarlas.
 
+## exp-20260929-shock-blend: mezcla con pronóstico ingenuo ante shocks
+
+Motivado por una caída real de posición en el leaderboard (rolling_24h
+78.6%→71.2%, puesto 14→19 en ~24h) mientras el líder se mantenía en 88%.
+La causa: el reloj virtual de la competencia avanzó (fase de adaptación)
+y trajo un shock de demanda simultáneo en 4 estaciones — Banderas
+(`05100`, -69%), `03000` (-24%), `05000` (+155%) y `02300` (+149%) — en
+las últimas ~18h de datos. `drift_monitor.py` lo detectó y disparó un
+reentrenamiento automático correctamente, pero incluso el modelo recién
+reentrenado predice mal justo después de un salto: apenas tiene un
+puñado de filas del nuevo nivel de demanda para entrenar.
+
+Se comparó, sobre el mismo holdout de 7 días, el modelo actual contra un
+pronóstico ingenuo puro (`lag_1`, el último valor observado) y varias
+mezclas, midiendo tanto el accuracy general como el de una ventana de
+"shock" (últimas 18h, donde vive el evento):
+
+| Peso del ingenuo (`lag_1`) | Accuracy holdout completo | Accuracy ventana de shock |
+|---:|---:|---:|
+| 0.0 (modelo puro, anterior) | 80.64% | 63.69% |
+| 0.1 | 81.35-81.49% | 66.61-67.90% |
+| **0.2** | **81.50%** (máximo) | 69.07-70.13% |
+| **0.25 — adoptado** | ~81.3% | ~70.6% |
+| 0.3 | 81.12% | 71.05% |
+| 0.5 | 79.04% | 73.64% |
+| 0.7 | 75.59% | 74.35% |
+
+El pronóstico ingenuo no tiene el retraso estructural del modelo: *es*
+literalmente el nivel más reciente, así que reacciona a un salto de
+demanda al instante, mientras el modelo tiene que esperar a acumular
+filas del nuevo régimen y reentrenar. Mezclar una fracción moderada
+(`0.25`) del ingenuo cuesta menos de 0.2pp en datos tranquilos (el 0.2
+es el óptimo exacto del holdout completo, pero la curva es casi plana
+entre 0.1 y 0.3) y recupera varios puntos justo cuando más importa: en
+la ventana de shock, 0.25 ronda 70-71% de accuracy frente al 63.69% del
+modelo puro, sin necesitar saber de antemano qué estación está en shock.
+
+Antes de esto se probó también blindar la mezcla combinándola solo con
+el modelo (sin ingenuo) contra el shock, y no alcanzaba: el modelo puro
+predijo 0% de accuracy en Banderas en esa ventana porque seguía anclado
+al nivel viejo con apenas una fracción de filas del nuevo.
+
+`NAIVE_BLEND_WEIGHT = 0.25` se agregó en `pulso_transmi/pipeline.py`
+(`predict_targets`, donde se genera la predicción real que se envía) y
+en `src/pipeline.py` (`train_and_evaluate`, para que las métricas de
+holdout reporten lo mismo que efectivamente se somete). No requirió
+cambios en el modelo entrenado ni en `NUMERIC_FEATURES` — es un ajuste
+en tiempo de predicción, no una feature nueva.
+
 ## Reproducibilidad
 
 Regenerar el modelo desde el API:

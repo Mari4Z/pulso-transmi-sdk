@@ -40,6 +40,13 @@ ALGORITHM = "hgb-poisson"
 FEATURE_SET_ID = "pulso-hgb-poisson-features"
 FEATURE_SET_VERSION = "v1"
 
+# exp-20260929-shock-blend (docs/experimentos-modelos.md): must match
+# NAIVE_BLEND_WEIGHT in pulso_transmi/pipeline.py — that's what actually
+# gets submitted at predict time, so scoring it here with the same blend
+# keeps these holdout numbers an honest preview instead of measuring a
+# pure-model prediction we never actually send.
+NAIVE_BLEND_WEIGHT = 0.25
+
 # exp-20260927-hgb-poisson-002 (see docs/experimentos-modelos.md): a 12-run
 # random search plus a same-size follow-up around its best region, both
 # scored on the real 7-day holdout, clustered tightly (83.0-83.7%) — this
@@ -217,7 +224,11 @@ def train_and_evaluate(
             continue
         y_val = val_rows.pop("target")
         X_val = prepare_matrix(val_rows).reindex(columns=feature_columns, fill_value=0.0)
-        preds = model.predict(X_val)
+        model_preds = model.predict(X_val)
+        # Blend with the naive persistence forecast (lag_1) — see
+        # NAIVE_BLEND_WEIGHT above — so this holdout score matches what
+        # predict_targets() actually submits, not a pure-model number.
+        preds = (1 - NAIVE_BLEND_WEIGHT) * model_preds + NAIVE_BLEND_WEIGHT * val_rows["lag_1"].to_numpy()
         # Métrica oficial: WAPE por estación, luego promediado — no agregado
         # sobre todas las estaciones (ver accuracy_monitor.py). Con demandas
         # muy distintas entre estaciones, agregar primero deja que las de
