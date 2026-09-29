@@ -2,9 +2,10 @@ name: Drift Monitor
 
 on:
   schedule:
-    # Cada 6 horas: el drift no cambia tan rápido como para justificar
-    # revisarlo cada pocos minutos como las predicciones.
-    - cron: "23 */6 * * *"
+    # Cada hora (antes cada 6h): con 6h de por medio, un drift severo podía
+    # seguir empeorando bastante entre un reentrenamiento y el siguiente
+    # chequeo — ver docs/experimentos-modelos.md, exp-20260929-shock-blend.
+    - cron: "23 * * * *"
   workflow_dispatch:
 
 jobs:
