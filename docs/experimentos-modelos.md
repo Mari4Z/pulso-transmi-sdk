@@ -232,6 +232,41 @@ que además se beneficia mucho más de lo que cuesta.
 ambos `pulso_transmi/pipeline.py` y `src/pipeline.py`, mismo patrón que
 el resto de constantes duplicadas entre entrenamiento y predicción real.
 
+## exp-20260930-extended-ceiling: techo más alto para colapsos extremos
+
+Con Banderas todavía en ~0% de accuracy en vivo pese al blend adaptativo
+(-80% de cambio de media, muy por encima del punto de saturación de 50%
+del experimento anterior), se preguntó si valía la pena seguir subiendo
+el peso del ingenuo. La razón por la que sí valía la pena probar más
+agresivo: una estación que ya mide 0% no puede empeorar con la métrica
+actual (clip en 0), así que no hay downside real en probar pesos altos
+específicamente para los casos más extremos.
+
+Barrido de peso solo para Banderas, sobre las últimas 3h y 6h reales
+(no el holdout de 7 días completo, que diluye el efecto de un evento tan
+reciente):
+
+| Peso | Accuracy Banderas (6h) | Accuracy Banderas (3h) |
+|---:|---:|---:|
+| 0.25 | 4.7% | 0.0% |
+| 0.65 (techo anterior) | 53.1% | 34.4% |
+| 0.85 | 71.4% | 55.5% |
+| 1.00 (ingenuo puro) | 68.7% | 67.0% |
+
+0.85 quedó como el mejor punto antes de que la curva se aplane (1.00 ya
+no mejora más en la ventana de 6h). Se extendió también el punto de
+saturación de 50% a 80% de cambio — si no, Banderas (80.1% de cambio)
+seguía tocando el mismo techo aunque el cambio real fuera aún mayor.
+
+Verificado que esto no perjudica al resto: con el nuevo techo (0.85,
+satura en 80%) sobre *todas* las estaciones y ventanas recientes reales,
+el accuracy promedio por estación subió +0.9-1.3pp en las ventanas de 6h/3h
+(el efecto de Banderas se diluye entre 12 estaciones en el promedio
+oficial) a un costo de apenas -0.46pp en el holdout completo de 7 días.
+
+`NAIVE_BLEND_SEVERE` pasó de `0.65` a `0.85` y `NAIVE_BLEND_DRIFT_CAP` de
+`50.0` a `80.0` en ambos `pulso_transmi/pipeline.py` y `src/pipeline.py`.
+
 ## Reproducibilidad
 
 Regenerar el modelo desde el API:

@@ -43,9 +43,21 @@ NAIVE_BLEND_BASE = 0.25
 # in the shock window, +3.6pp on Banderas specifically, for -1.2pp on the
 # full holdout (which right now is itself mostly drift-affected rows —
 # a calm station never leaves NAIVE_BLEND_BASE).
-NAIVE_BLEND_SEVERE = 0.65
+#
+# exp-20260930-extended-ceiling: a station in extreme, still-ongoing
+# collapse (Banderas past 80% change) kept scoring near 0% even at 0.65 —
+# it was already saturating the old 15-50% scale, so no matter how much
+# worse it got the weight couldn't follow. Since a station already at ~0%
+# accuracy can't be made worse by this metric, there was no real downside
+# to testing higher: raised the ceiling to 0.85 and pushed the saturation
+# point out to 80% change. Tested against the real live data during an
+# active multi-station shock: Banderas alone went from ~34% to ~55% in a
+# 3h window; the per-station-averaged metric across all 12 stations moved
+# +0.9-1.3pp (Banderas is only 1/12 of that average) for -0.46pp on the
+# full 7-day holdout.
+NAIVE_BLEND_SEVERE = 0.85
 NAIVE_BLEND_DRIFT_THRESHOLD = 15.0
-NAIVE_BLEND_DRIFT_CAP = 50.0
+NAIVE_BLEND_DRIFT_CAP = 80.0
 
 
 def _station_naive_weights(observations: pd.DataFrame) -> dict[str, float]:

@@ -40,16 +40,16 @@ ALGORITHM = "hgb-poisson"
 FEATURE_SET_ID = "pulso-hgb-poisson-features"
 FEATURE_SET_VERSION = "v1"
 
-# exp-20260929-shock-blend / exp-20260930-adaptive-blend
-# (docs/experimentos-modelos.md): must match the constants and
-# _station_naive_weights() in pulso_transmi/pipeline.py — that's what
-# actually gets submitted at predict time, so scoring it here with the
-# same blend keeps these holdout numbers an honest preview instead of
-# measuring a pure-model prediction we never actually send.
+# exp-20260929-shock-blend / exp-20260930-adaptive-blend /
+# exp-20260930-extended-ceiling (docs/experimentos-modelos.md): must match
+# the constants and _station_naive_weights() in pulso_transmi/pipeline.py
+# — that's what actually gets submitted at predict time, so scoring it
+# here with the same blend keeps these holdout numbers an honest preview
+# instead of measuring a pure-model prediction we never actually send.
 NAIVE_BLEND_BASE = 0.25
-NAIVE_BLEND_SEVERE = 0.65
+NAIVE_BLEND_SEVERE = 0.85
 NAIVE_BLEND_DRIFT_THRESHOLD = 15.0
-NAIVE_BLEND_DRIFT_CAP = 50.0
+NAIVE_BLEND_DRIFT_CAP = 80.0
 
 
 def _station_naive_weights(observations: pd.DataFrame) -> dict[str, float]:
