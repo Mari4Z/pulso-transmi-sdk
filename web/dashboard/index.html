@@ -266,7 +266,7 @@
 
   <section>
     <p class="section-title">Estaciones</p>
-    <p class="section-sub" id="stations-sub">Accuracy de las últimas 3 h &middot; color y tamaño = accuracy (más azul y grande es mejor) &middot; anillo punteado = drift severo aislado en esa estación</p>
+    <p class="section-sub" id="stations-sub">Mapa y color = accuracy reciente (últimas 3 h, más azul y grande es mejor) &middot; anillo punteado = drift severo aislado en esa estación &middot; la tabla agrega el acumulado histórico</p>
     <div class="stations-grid">
       <div class="card map-panel">
         <div id="map-wrap"></div>
@@ -277,10 +277,11 @@
       <div class="card station-table">
         <table>
           <thead>
-            <tr><th>Estación</th><th>Corredor</th><th>Accuracy</th><th>n</th><th>Drift</th></tr>
+            <tr><th>Estación</th><th>Corredor</th><th>Reciente (3h)</th><th>n</th><th>Acumulado</th><th>n</th><th>Drift</th></tr>
           </thead>
-          <tbody id="station-body"><tr><td colspan="5" class="empty">Cargando…</td></tr></tbody>
+          <tbody id="station-body"><tr><td colspan="7" class="empty">Cargando…</td></tr></tbody>
         </table>
+        <p class="section-sub" id="cumulative-note" style="margin-top:6px;"></p>
       </div>
     </div>
   </section>
@@ -320,6 +321,26 @@
       if (!r.ok) throw new Error("Supabase " + r.status + " on " + path);
       return r.json();
     });
+  }
+
+  // PostgREST limita a 1000 filas por consulta pase lo que pase en `limit=`
+  // — para el acumulado histórico de predicciones (miles de filas) hay que
+  // paginar con offset hasta que una página vuelva con menos de PAGE_SIZE.
+  var PAGE_SIZE = 1000;
+  var MAX_PAGES = 12; // techo de seguridad: 12k filas, de sobra para esta tabla
+  function restAll(pathWithoutPaging) {
+    var all = [];
+    function fetchPage(offset) {
+      var sep = pathWithoutPaging.indexOf("?") === -1 ? "?" : "&";
+      return rest(pathWithoutPaging + sep + "limit=" + PAGE_SIZE + "&offset=" + offset).then(function (page) {
+        all = all.concat(page);
+        if (page.length === PAGE_SIZE && offset / PAGE_SIZE < MAX_PAGES - 1) {
+          return fetchPage(offset + PAGE_SIZE);
+        }
+        return all;
+      });
+    }
+    return fetchPage(0);
   }
 
   var fmtDateTime = new Intl.DateTimeFormat("es-CO", {
@@ -548,23 +569,29 @@
   }
 
   // ---- stations: map + table ----
-  function renderStations(stations, resolvedPredictions, stationDrift) {
+  function renderStations(stations, resolvedPredictions, stationDrift, cumulativePredictions) {
     stationDrift = stationDrift || {};
-    var byStation = {};
-    resolvedPredictions.forEach(function (p) {
-      byStation[p.station_id] = byStation[p.station_id] || { errSum: 0, actualSum: 0, n: 0 };
-      var b = byStation[p.station_id];
-      b.errSum += Math.abs(p.absolute_error);
-      b.actualSum += p.actual_demand;
-      b.n += 1;
-    });
+    function aggregate(rows) {
+      var by = {};
+      rows.forEach(function (p) {
+        by[p.station_id] = by[p.station_id] || { errSum: 0, actualSum: 0, n: 0 };
+        var b = by[p.station_id];
+        b.errSum += Math.abs(p.absolute_error);
+        b.actualSum += p.actual_demand;
+        b.n += 1;
+      });
+      return by;
+    }
+    var byStation = aggregate(resolvedPredictions);
+    var byStationCumulative = aggregate(cumulativePredictions || []);
 
     var mapWrap = document.getElementById("map-wrap");
     var tbody = document.getElementById("station-body");
+    var cumulativeNote = document.getElementById("cumulative-note");
 
     if (!stations.length) {
       mapWrap.innerHTML = '<div class="empty">Sin estaciones.</div>';
-      tbody.innerHTML = '<tr><td colspan="5" class="empty">Sin datos.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" class="empty">Sin datos.</td></tr>';
       return;
     }
 
@@ -588,9 +615,15 @@
     var rows = stations.map(function (s) {
       var b = byStation[s.station_id];
       var acc = b && b.actualSum > 0 ? Math.max(0, 1 - b.errSum / b.actualSum) : null;
+      var bc = byStationCumulative[s.station_id];
+      var accCumulative = bc && bc.actualSum > 0 ? Math.max(0, 1 - bc.errSum / bc.actualSum) : null;
       var drift = stationDrift[s.station_id];
       var sev = drift ? driftSeverity(drift) : null;
-      return { station: s, acc: acc, n: b ? b.n : 0, drift: drift, sev: sev };
+      return {
+        station: s, acc: acc, n: b ? b.n : 0,
+        accCumulative: accCumulative, nCumulative: bc ? bc.n : 0,
+        drift: drift, sev: sev
+      };
     });
 
     var svg = '<svg class="map" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Mapa de estaciones">';
@@ -614,6 +647,7 @@
     dots.forEach(function (el, i) {
       var r = rows[i];
       var label = r.station.station_name + (r.acc != null ? "  " + pct(r.acc) + " (n=" + r.n + ")" : "  sin datos");
+      if (r.accCumulative != null) label += "  ·  acum " + pct(r.accCumulative);
       if (r.drift) label += "  ·  drift " + (r.drift.mean_change_pct >= 0 ? "+" : "") + r.drift.mean_change_pct.toFixed(0) + "%";
       items.push({ el: el, label: label });
     });
@@ -628,8 +662,13 @@
       }
       return '<tr><td>' + r.station.station_name + '</td><td>' + r.station.corridor + '</td>' +
         '<td class="num">' + (r.acc != null ? pct(r.acc) : "—") + '</td><td class="num">' + r.n + '</td>' +
+        '<td class="num">' + (r.accCumulative != null ? pct(r.accCumulative) : "—") + '</td><td class="num">' + r.nCumulative + '</td>' +
         '<td>' + driftCell + '</td></tr>';
     }).join("");
+    if (cumulativeNote) {
+      cumulativeNote.textContent = "\"Acumulado\" = todas las predicciones resueltas desde que este pipeline empezó a registrarlas (13-sep) — " +
+        "no coincide con el histórico completo que ve el profesor en el portal oficial (que arrancó antes), pero sí es más largo que las 3h recientes.";
+    }
   }
 
   // ---- error histogram ----
@@ -708,10 +747,16 @@
       rest("leaderboard_log?select=*&order=measured_at.desc&limit=60"),
       rest("pipeline_executions?select=*&order=started_at.desc&limit=1"),
       rest("stations?select=station_id,station_name,corridor,latitude,longitude"),
-      rest("predictions?select=station_id,absolute_error,actual_demand,target_at&actual_demand=not.is.null&order=target_at.desc&limit=1000")
+      rest("predictions?select=station_id,absolute_error,actual_demand,target_at&actual_demand=not.is.null&order=target_at.desc&limit=1000"),
+      // Acumulado histórico completo (no solo las últimas 1000 filas): paginado,
+      // cubre todo lo que este pipeline ha registrado desde que empezó a
+      // guardar predicciones (13-sep) — no todo el historial que ve el
+      // profesor en el portal oficial, que arrancó antes.
+      restAll("predictions?select=station_id,absolute_error,actual_demand&actual_demand=not.is.null&order=target_at.asc")
     ]).then(function (results) {
       var metrics = results[0], models = results[1], drift = results[2], stationDrift = results[3],
-          leaderboard = results[4], pipelineExec = results[5], stations = results[6], resolved = results[7];
+          leaderboard = results[4], pipelineExec = results[5], stations = results[6], resolved = results[7],
+          resolvedCumulative = results[8];
 
       var latestStationDrift = {};
       stationDrift.forEach(function (row) {
@@ -736,7 +781,7 @@
       var resolvedRecent = recentCutoff
         ? resolved.filter(function (r) { return new Date(r.target_at) >= recentCutoff; })
         : [];
-      renderStations(stations, resolvedRecent.length ? resolvedRecent : resolved, latestStationDrift);
+      renderStations(stations, resolvedRecent.length ? resolvedRecent : resolved, latestStationDrift, resolvedCumulative);
       renderErrorHistogram(resolved);
 
       label.textContent = "en vivo · " + fmtTime.format(new Date()) + " (Bogotá)";
