@@ -201,6 +201,37 @@ holdout reporten lo mismo que efectivamente se somete). No requirió
 cambios en el modelo entrenado ni en `NUMERIC_FEATURES` — es un ajuste
 en tiempo de predicción, no una feature nueva.
 
+## exp-20260930-adaptive-blend: peso de mezcla según severidad del drift
+
+El peso fijo de 0.25 no bastó para una estación en colapso severo:
+Banderas siguió en 0% de accuracy incluso ya con el modelo reentrenado y
+la mezcla activa — las predicciones seguían en ~500 con la demanda real
+ya en ~100-250 (75% de peso en un modelo todavía anclado al nivel viejo
+domina sobre el 25% del ingenuo).
+
+Se probó escalar el peso del ingenuo según qué tan severo es el drift
+*de esa estación en particular* (mismo cálculo de cambio de media
+reciente-vs-histórico que ya usa `drift_monitor.py`): por debajo del
+umbral de 15% se queda en el 0.25 base (estaciones tranquilas, sin
+cambio); por encima, escala linealmente hasta un techo de 0.65 en 50% de
+cambio o más.
+
+| Configuración | Accuracy holdout completo | Accuracy ventana de shock (18h) | Accuracy Banderas |
+|---|---:|---:|---:|
+| Peso fijo 0.25 (anterior) | 80.66% | 67.45% | 69.04% |
+| **Adaptativo (0.25 base, 0.65 severo) — adoptado** | 79.43% | **77.11%** | **72.60%** |
+
+El costo en el holdout completo (-1.2pp) viene de que, en este momento,
+buena parte del holdout *es* drift severo (11 de 12 estaciones lo están
+al momento de medir) — una estación tranquila nunca sale del 0.25 base,
+así que el costo no es permanente, solo aparece cuando hay drift real
+que además se beneficia mucho más de lo que cuesta.
+
+`NAIVE_BLEND_BASE`/`NAIVE_BLEND_SEVERE`/`NAIVE_BLEND_DRIFT_THRESHOLD`/
+`NAIVE_BLEND_DRIFT_CAP` y `_station_naive_weights()` se agregaron en
+ambos `pulso_transmi/pipeline.py` y `src/pipeline.py`, mismo patrón que
+el resto de constantes duplicadas entre entrenamiento y predicción real.
+
 ## Reproducibilidad
 
 Regenerar el modelo desde el API:

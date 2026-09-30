@@ -40,12 +40,37 @@ ALGORITHM = "hgb-poisson"
 FEATURE_SET_ID = "pulso-hgb-poisson-features"
 FEATURE_SET_VERSION = "v1"
 
-# exp-20260929-shock-blend (docs/experimentos-modelos.md): must match
-# NAIVE_BLEND_WEIGHT in pulso_transmi/pipeline.py — that's what actually
-# gets submitted at predict time, so scoring it here with the same blend
-# keeps these holdout numbers an honest preview instead of measuring a
-# pure-model prediction we never actually send.
-NAIVE_BLEND_WEIGHT = 0.25
+# exp-20260929-shock-blend / exp-20260930-adaptive-blend
+# (docs/experimentos-modelos.md): must match the constants and
+# _station_naive_weights() in pulso_transmi/pipeline.py — that's what
+# actually gets submitted at predict time, so scoring it here with the
+# same blend keeps these holdout numbers an honest preview instead of
+# measuring a pure-model prediction we never actually send.
+NAIVE_BLEND_BASE = 0.25
+NAIVE_BLEND_SEVERE = 0.65
+NAIVE_BLEND_DRIFT_THRESHOLD = 15.0
+NAIVE_BLEND_DRIFT_CAP = 50.0
+
+
+def _station_naive_weights(observations: pd.DataFrame) -> dict[str, float]:
+    if observations.empty:
+        return {}
+    drift_cutoff = observations["observed_at"].max() - pd.Timedelta(1, unit="D")
+    recent = observations[observations["observed_at"] >= drift_cutoff]
+    historical = observations[observations["observed_at"] < drift_cutoff]
+    weights: dict[str, float] = {}
+    for station_id, recent_group in recent.groupby("station_id"):
+        hist_mean = historical.loc[historical["station_id"] == station_id, "demand"].mean()
+        if not hist_mean or pd.isna(hist_mean):
+            continue
+        pct_change = abs((recent_group["demand"].mean() - hist_mean) / hist_mean * 100)
+        if pct_change < NAIVE_BLEND_DRIFT_THRESHOLD:
+            weights[station_id] = NAIVE_BLEND_BASE
+            continue
+        span = NAIVE_BLEND_DRIFT_CAP - NAIVE_BLEND_DRIFT_THRESHOLD
+        frac = min(1.0, (pct_change - NAIVE_BLEND_DRIFT_THRESHOLD) / span)
+        weights[station_id] = NAIVE_BLEND_BASE + frac * (NAIVE_BLEND_SEVERE - NAIVE_BLEND_BASE)
+    return weights
 
 # exp-20260927-hgb-poisson-002 (see docs/experimentos-modelos.md): a 12-run
 # random search plus a same-size follow-up around its best region, both
@@ -195,6 +220,7 @@ def train_and_evaluate(
     feature_columns: list[str] | None = None
     rows_by_horizon: dict[str, int] = {}
     metrics_by_horizon: dict[int, dict[str, float | int | None]] = {}
+    naive_weights = _station_naive_weights(frame[["observed_at", "station_id", "demand"]])
 
     for horizon in HORIZONS:
         training = frame.copy()
@@ -225,10 +251,12 @@ def train_and_evaluate(
         y_val = val_rows.pop("target")
         X_val = prepare_matrix(val_rows).reindex(columns=feature_columns, fill_value=0.0)
         model_preds = model.predict(X_val)
-        # Blend with the naive persistence forecast (lag_1) — see
-        # NAIVE_BLEND_WEIGHT above — so this holdout score matches what
-        # predict_targets() actually submits, not a pure-model number.
-        preds = (1 - NAIVE_BLEND_WEIGHT) * model_preds + NAIVE_BLEND_WEIGHT * val_rows["lag_1"].to_numpy()
+        # Blend with the naive persistence forecast (lag_1), weighted per
+        # station by how severe its recent drift is — see
+        # _station_naive_weights above — so this holdout score matches
+        # what predict_targets() actually submits, not a pure-model number.
+        row_weights = val_rows["station_id"].map(naive_weights).fillna(NAIVE_BLEND_BASE).to_numpy()
+        preds = (1 - row_weights) * model_preds + row_weights * val_rows["lag_1"].to_numpy()
         # Métrica oficial: WAPE por estación, luego promediado — no agregado
         # sobre todas las estaciones (ver accuracy_monitor.py). Con demandas
         # muy distintas entre estaciones, agregar primero deja que las de

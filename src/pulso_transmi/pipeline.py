@@ -29,10 +29,44 @@ ALGORITHM = "hgb-poisson"
 # *is* the new level. Blending a modest slice of the model's own lag_1
 # feature into its prediction costs ~0.1pp on calm holdout data but wins
 # ~5pp during a live regime shift, which is when it matters most (see
-# docs). Must match NAIVE_BLEND_WEIGHT in src/pipeline.py — that's what
+# docs). Must match the constants below in src/pipeline.py — that's what
 # train_and_evaluate() scores against, so the reported holdout metrics
 # match what actually gets submitted here.
-NAIVE_BLEND_WEIGHT = 0.25
+NAIVE_BLEND_BASE = 0.25
+
+# exp-20260930-adaptive-blend: a flat 0.25 wasn't enough for a station in
+# a *severe* collapse (Banderas stayed at 0% accuracy — predictions still
+# ~2-3x the real level) — 75% weight on a model still anchored to the old
+# level dominates. Scale the naive weight up with how severe that
+# station's own recent drift is (same recent-vs-historical % change
+# drift_monitor.py computes), capped at NAIVE_BLEND_SEVERE. Tested: +9.7pp
+# in the shock window, +3.6pp on Banderas specifically, for -1.2pp on the
+# full holdout (which right now is itself mostly drift-affected rows —
+# a calm station never leaves NAIVE_BLEND_BASE).
+NAIVE_BLEND_SEVERE = 0.65
+NAIVE_BLEND_DRIFT_THRESHOLD = 15.0
+NAIVE_BLEND_DRIFT_CAP = 50.0
+
+
+def _station_naive_weights(observations: pd.DataFrame) -> dict[str, float]:
+    if observations.empty:
+        return {}
+    cutoff = observations["observed_at"].max() - pd.Timedelta(1, unit="D")
+    recent = observations[observations["observed_at"] >= cutoff]
+    historical = observations[observations["observed_at"] < cutoff]
+    weights: dict[str, float] = {}
+    for station_id, recent_group in recent.groupby("station_id"):
+        hist_mean = historical.loc[historical["station_id"] == station_id, "demand"].mean()
+        if not hist_mean or pd.isna(hist_mean):
+            continue
+        pct_change = abs((recent_group["demand"].mean() - hist_mean) / hist_mean * 100)
+        if pct_change < NAIVE_BLEND_DRIFT_THRESHOLD:
+            weights[station_id] = NAIVE_BLEND_BASE
+            continue
+        span = NAIVE_BLEND_DRIFT_CAP - NAIVE_BLEND_DRIFT_THRESHOLD
+        frac = min(1.0, (pct_change - NAIVE_BLEND_DRIFT_THRESHOLD) / span)
+        weights[station_id] = NAIVE_BLEND_BASE + frac * (NAIVE_BLEND_SEVERE - NAIVE_BLEND_BASE)
+    return weights
 
 
 class PipelineError(RuntimeError):
@@ -180,6 +214,7 @@ def predict_targets(
 
     feature_columns = package["feature_columns"]
     models = package["models"]
+    naive_weights = _station_naive_weights(observations)
     predictions: list[dict[str, Any]] = []
     for target in targets:
         station_id = str(target["station_id"])
@@ -190,7 +225,8 @@ def predict_targets(
         matrix = _prepare_matrix(row, feature_columns)
         model_value = float(models[horizon // 15].predict(matrix)[0])
         naive_value = float(row["lag_1"].iloc[0])
-        value = (1 - NAIVE_BLEND_WEIGHT) * model_value + NAIVE_BLEND_WEIGHT * naive_value
+        weight = naive_weights.get(station_id, NAIVE_BLEND_BASE)
+        value = (1 - weight) * model_value + weight * naive_value
         predictions.append(
             {
                 "station_id": station_id,
