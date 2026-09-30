@@ -207,19 +207,52 @@ def _supabase_client() -> Client | None:
     return create_client(url, key)
 
 
+def _score_predictions(
+    val_rows: pd.DataFrame, y_val: pd.Series, preds: np.ndarray
+) -> dict[str, float | int | None]:
+    """Per-station WAPE, then averaged — see the note in train_and_evaluate.
+    Shared by the new model and (when comparing) the currently active one,
+    so both are scored identically."""
+    errors = (y_val - preds).abs()
+    station_wapes = []
+    for station_id, station_actual in y_val.groupby(val_rows["station_id"]).sum().items():
+        if station_actual <= 0:
+            continue
+        station_error = errors[val_rows["station_id"] == station_id].sum()
+        station_wapes.append(float(station_error / station_actual))
+    if not station_wapes:
+        return {"wape": None, "accuracy": None, "n_val": len(val_rows)}
+    wape = sum(station_wapes) / len(station_wapes)
+    return {"wape": wape, "accuracy": max(0.0, 1 - wape), "n_val": len(val_rows)}
+
+
 def train_and_evaluate(
-    frame: pd.DataFrame, cutoff: pd.Timestamp, validation_end: pd.Timestamp
-) -> tuple[dict, list[str], dict[str, int], dict[int, dict[str, float | int | None]]]:
+    frame: pd.DataFrame,
+    cutoff: pd.Timestamp,
+    validation_end: pd.Timestamp,
+    existing_package: dict | None = None,
+) -> tuple[
+    dict, list[str], dict[str, int], dict[int, dict[str, float | int | None]], dict[int, dict[str, float | int | None]] | None
+]:
     """Train each horizon's model on rows before `cutoff`, then score it on
     the held-out window [cutoff, validation_end] — same WAPE/accuracy
     definition as accuracy_monitor.py, so these numbers are directly
     comparable to what that job (and the dashboard) reports for live
     predictions, just measured immediately instead of waiting on ground
-    truth to arrive."""
+    truth to arrive.
+
+    If `existing_package` (the currently active model, loaded from
+    MODEL_PATH before it gets overwritten) is given, it's scored on the
+    exact same validation rows — so main() can decide whether the new
+    model actually improves on what's already live before promoting it,
+    instead of always activating whatever just got trained."""
     models: dict[int, HistGradientBoostingRegressor] = {}
     feature_columns: list[str] | None = None
     rows_by_horizon: dict[str, int] = {}
     metrics_by_horizon: dict[int, dict[str, float | int | None]] = {}
+    metrics_by_horizon_existing: dict[int, dict[str, float | int | None]] | None = (
+        {} if existing_package is not None else None
+    )
     naive_weights = _station_naive_weights(frame[["observed_at", "station_id", "demand"]])
 
     for horizon in HORIZONS:
@@ -247,6 +280,8 @@ def train_and_evaluate(
         horizon_minutes = horizon * 15
         if val_rows.empty:
             metrics_by_horizon[horizon_minutes] = {"wape": None, "accuracy": None, "n_val": 0}
+            if metrics_by_horizon_existing is not None:
+                metrics_by_horizon_existing[horizon_minutes] = {"wape": None, "accuracy": None, "n_val": 0}
             continue
         y_val = val_rows.pop("target")
         X_val = prepare_matrix(val_rows).reindex(columns=feature_columns, fill_value=0.0)
@@ -256,31 +291,28 @@ def train_and_evaluate(
         # _station_naive_weights above — so this holdout score matches
         # what predict_targets() actually submits, not a pure-model number.
         row_weights = val_rows["station_id"].map(naive_weights).fillna(NAIVE_BLEND_BASE).to_numpy()
-        preds = (1 - row_weights) * model_preds + row_weights * val_rows["lag_1"].to_numpy()
+        naive_preds = val_rows["lag_1"].to_numpy()
+        preds = (1 - row_weights) * model_preds + row_weights * naive_preds
         # Métrica oficial: WAPE por estación, luego promediado — no agregado
         # sobre todas las estaciones (ver accuracy_monitor.py). Con demandas
         # muy distintas entre estaciones, agregar primero deja que las de
         # mayor demanda dominen el número; promediar por estación las pesa
         # por igual, igual que el leaderboard.
-        errors = (y_val - preds).abs()
-        station_wapes = []
-        for station_id, station_actual in y_val.groupby(val_rows["station_id"]).sum().items():
-            if station_actual <= 0:
-                continue
-            station_error = errors[val_rows["station_id"] == station_id].sum()
-            station_wapes.append(float(station_error / station_actual))
-        if not station_wapes:
-            metrics_by_horizon[horizon_minutes] = {"wape": None, "accuracy": None, "n_val": len(val_rows)}
-            continue
-        wape = sum(station_wapes) / len(station_wapes)
-        metrics_by_horizon[horizon_minutes] = {
-            "wape": wape,
-            "accuracy": max(0.0, 1 - wape),
-            "n_val": len(val_rows),
-        }
+        metrics_by_horizon[horizon_minutes] = _score_predictions(val_rows, y_val, preds)
+
+        if metrics_by_horizon_existing is not None:
+            existing_models = existing_package.get("models", {})
+            existing_feature_columns = existing_package.get("feature_columns")
+            if horizon in existing_models and existing_feature_columns:
+                X_val_existing = prepare_matrix(val_rows).reindex(columns=existing_feature_columns, fill_value=0.0)
+                existing_model_preds = existing_models[horizon].predict(X_val_existing)
+                existing_preds = (1 - row_weights) * existing_model_preds + row_weights * naive_preds
+                metrics_by_horizon_existing[horizon_minutes] = _score_predictions(val_rows, y_val, existing_preds)
+            else:
+                metrics_by_horizon_existing[horizon_minutes] = {"wape": None, "accuracy": None, "n_val": len(val_rows)}
 
     assert feature_columns is not None
-    return models, feature_columns, rows_by_horizon, metrics_by_horizon
+    return models, feature_columns, rows_by_horizon, metrics_by_horizon, metrics_by_horizon_existing
 
 
 def register_training_run(
@@ -293,6 +325,7 @@ def register_training_run(
     validation_end: pd.Timestamp,
     model_version: str,
     trained_at: datetime,
+    promote: bool = True,
 ) -> tuple[str, str]:
     definition = {"numeric": list(NUMERIC_FEATURES), "categorical": list(CATEGORICAL_FEATURES)}
     definition_hash = hashlib.sha256(json.dumps(definition, sort_keys=True).encode()).hexdigest()[:16]
@@ -323,22 +356,32 @@ def register_training_run(
         }
     ).execute()
 
-    # Only one model_version may be active per algorithm (DB constraint):
-    # retire whatever was active before registering the new one.
-    supabase.table("model_versions").update({"is_active": False}).eq("algorithm", ALGORITHM).eq(
-        "is_active", True
-    ).execute()
+    if promote:
+        # Only one model_version may be active per algorithm (DB constraint):
+        # retire whatever was active before registering the new one.
+        supabase.table("model_versions").update({"is_active": False}).eq("algorithm", ALGORITHM).eq(
+            "is_active", True
+        ).execute()
 
     model_version_id = str(uuid.uuid4())
+    # Not-promoted runs never get committed to models/pulso_hgb_poisson.joblib
+    # (see main()'s wape comparison) — their bytes don't exist anywhere past
+    # this job, so the artifact_uri says so instead of pointing at a git path
+    # that was never written.
+    artifact_uri = (
+        f"github:Mari4Z/pulso-transmi-sdk:models/pulso_hgb_poisson.joblib@{model_version}"
+        if promote
+        else f"rejected-not-committed:{model_version}"
+    )
     supabase.table("model_versions").insert(
         {
             "model_version_id": model_version_id,
             "training_run_id": training_run_id,
             "algorithm": ALGORITHM,
             "hyperparameters": HYPERPARAMETERS,
-            "artifact_uri": f"github:Mari4Z/pulso-transmi-sdk:models/pulso_hgb_poisson.joblib@{model_version}",
+            "artifact_uri": artifact_uri,
             "trained_at": trained_at.isoformat(),
-            "is_active": True,
+            "is_active": promote,
         }
     ).execute()
     return training_run_id, model_version_id
@@ -415,9 +458,19 @@ def main() -> None:
         train_end = cutoff - pd.Timedelta(1, unit="m")
         validation_start = cutoff
 
+        # Cargar el modelo actualmente activo (si existe) ANTES de entrenar
+        # el nuevo — se usa para decidir si promoverlo, y el nuevo modelo
+        # está a punto de sobreescribir este mismo archivo.
+        existing_package: dict | None = None
+        if MODEL_PATH.exists() and METADATA_PATH.exists():
+            try:
+                existing_package = joblib.load(MODEL_PATH)
+            except Exception as exc:
+                print(f"Advertencia: no se pudo cargar el modelo activo para comparar: {exc}")
+
         print("Entrenando y evaluando modelos (horizontes 15/30/45/60 min)...")
-        models, feature_columns, rows_by_horizon, metrics_by_horizon = train_and_evaluate(
-            frame, cutoff, validation_end
+        models, feature_columns, rows_by_horizon, metrics_by_horizon, metrics_by_horizon_existing = train_and_evaluate(
+            frame, cutoff, validation_end, existing_package=existing_package
         )
         for horizon_minutes, values in metrics_by_horizon.items():
             if values["accuracy"] is None:
@@ -428,15 +481,40 @@ def main() -> None:
                     f"wape={values['wape'] * 100:.2f}% (n={values['n_val']})"
                 )
 
+        # No activar un reentrenamiento a ciegas: si ya hay un modelo en
+        # producción, el nuevo solo se promueve (se comitea, se activa en
+        # Supabase) cuando su WAPE promedio en este mismo holdout es igual
+        # o mejor que el del modelo actual evaluado en los mismos datos —
+        # de lo contrario, seguir reentrenando en cada drift sin verificar
+        # esto podría estar empeorando la competencia en vez de mejorarla.
+        promote = True
+        new_wapes = [v["wape"] for v in metrics_by_horizon.values() if v["wape"] is not None]
+        avg_wape_new = sum(new_wapes) / len(new_wapes) if new_wapes else None
+        avg_wape_existing = None
+        if metrics_by_horizon_existing is not None and avg_wape_new is not None:
+            existing_wapes = [v["wape"] for v in metrics_by_horizon_existing.values() if v["wape"] is not None]
+            avg_wape_existing = sum(existing_wapes) / len(existing_wapes) if existing_wapes else None
+            if avg_wape_existing is not None:
+                promote = avg_wape_new <= avg_wape_existing
+                comparison = "mejora o iguala" if promote else "empeora"
+                print(
+                    f"Comparación vs. modelo activo: WAPE nuevo={avg_wape_new * 100:.2f}% "
+                    f"vs. WAPE activo={avg_wape_existing * 100:.2f}% -> {comparison}, "
+                    f"{'se promueve' if promote else 'NO se promueve, se mantiene el modelo activo'}."
+                )
+
         model_version = "hgb-poisson-" + started_at.strftime("%Y%m%dT%H%M%SZ")
-        MODEL_DIR.mkdir(exist_ok=True)
         package = {
             "model_version": model_version,
             "models": models,
             "feature_columns": feature_columns,
             "horizons": HORIZONS,
         }
-        joblib.dump(package, MODEL_PATH, compress=3)
+        if promote:
+            MODEL_DIR.mkdir(exist_ok=True)
+            joblib.dump(package, MODEL_PATH, compress=3)
+        else:
+            print(f"Modelo {model_version} descartado (no mejora el WAPE actual); no se sobrescribe {MODEL_PATH}.")
 
         triggered_by = os.environ.get("RETRAIN_TRIGGER", "manual")
         metadata = {
@@ -454,8 +532,9 @@ def main() -> None:
             "random_state": HYPERPARAMETERS["random_state"],
             "triggered_by": triggered_by,
         }
-        METADATA_PATH.write_text(json.dumps(metadata, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-        print(f"Modelo {model_version} guardado en {MODEL_PATH}")
+        if promote:
+            METADATA_PATH.write_text(json.dumps(metadata, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+            print(f"Modelo {model_version} guardado en {MODEL_PATH}")
 
         # MLflow: registro local (mlruns/, committed a git junto al modelo —
         # ver pipeline.yml) en vez de un tracking server, para no montar
@@ -469,7 +548,14 @@ def main() -> None:
             mlflow.set_tracking_uri(f"file:{MLFLOW_TRACKING_DIR.resolve()}")
             mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
             with mlflow.start_run(run_name=model_version):
-                mlflow.set_tags({"algorithm": ALGORITHM, "triggered_by": triggered_by, "dataset": DATASET_VERSION})
+                mlflow.set_tags(
+                    {
+                        "algorithm": ALGORITHM,
+                        "triggered_by": triggered_by,
+                        "dataset": DATASET_VERSION,
+                        "promoted": str(promote).lower(),
+                    }
+                )
                 mlflow.log_params(
                     {
                         **HYPERPARAMETERS,
@@ -486,7 +572,10 @@ def main() -> None:
                         mlflow.log_metric(f"accuracy_{horizon_minutes}min", values["accuracy"])
                         mlflow.log_metric(f"wape_{horizon_minutes}min", values["wape"])
                         mlflow.log_metric(f"n_val_{horizon_minutes}min", values["n_val"])
-                mlflow.log_artifact(str(METADATA_PATH))
+                if avg_wape_existing is not None:
+                    mlflow.log_metric("avg_wape_existing_active_model", avg_wape_existing)
+                if promote:
+                    mlflow.log_artifact(str(METADATA_PATH))
         except Exception as mlflow_exc:
             print(f"Advertencia: no se pudo registrar el experimento en MLflow: {mlflow_exc}")
 
@@ -500,6 +589,7 @@ def main() -> None:
                 validation_end=validation_end,
                 model_version=model_version,
                 trained_at=started_at,
+                promote=promote,
             )
             record_validation_metrics(
                 supabase,
@@ -517,7 +607,16 @@ def main() -> None:
                 }
             ).eq("execution_id", execution_id).execute()
 
-        print(json.dumps({"execution_id": execution_id, "model_version": model_version, "status": "succeeded"}))
+        print(
+            json.dumps(
+                {
+                    "execution_id": execution_id,
+                    "model_version": model_version,
+                    "promoted": promote,
+                    "status": "succeeded",
+                }
+            )
+        )
 
     except Exception as exc:
         if supabase is not None:

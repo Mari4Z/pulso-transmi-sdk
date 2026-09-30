@@ -267,6 +267,36 @@ oficial) a un costo de apenas -0.46pp en el holdout completo de 7 días.
 `NAIVE_BLEND_SEVERE` pasó de `0.65` a `0.85` y `NAIVE_BLEND_DRIFT_CAP` de
 `50.0` a `80.0` en ambos `pulso_transmi/pipeline.py` y `src/pipeline.py`.
 
+## Puerta de promoción: no activar un reentrenamiento que empeora
+
+Hasta ahora, cada vez que `drift_monitor.py` disparaba `pipeline.yml`
+(cada hora si hay drift severo, `SEVERE_MEAN_CHANGE_PCT = 15.0`), el
+modelo recién entrenado se activaba automáticamente sin comparar si
+realmente mejoraba sobre el que ya estaba en producción — con
+reentrenamientos tan frecuentes y datos ruidosos (conteos bajos de 15
+min), un reentrenamiento individual puede salir peor por azar, y
+activarlo a ciegas podría estar empeorando la competencia en vez de
+mejorarla.
+
+`train_and_evaluate()` ahora acepta opcionalmente el paquete del modelo
+actualmente activo (cargado desde `MODEL_PATH` justo antes de
+sobreescribirlo) y lo evalúa sobre el **mismo** holdout y con la misma
+mezcla adaptativa que el modelo nuevo — comparación justa, misma
+ventana de 7 días, mismos pesos de drift. `main()` solo promueve
+(comitea `models/pulso_hgb_poisson.joblib`/`.json`, activa el
+`model_version` en Supabase) si el WAPE promedio del modelo nuevo es
+igual o mejor que el del activo en ese mismo holdout; si no, el intento
+queda registrado en `training_runs`/`metrics` para auditoría (con
+`model_versions.is_active=false` y `artifact_uri` marcado como
+`rejected-not-committed:...`, porque sus pesos no se guardan en ningún
+lado más allá de ese run) pero el modelo activo no cambia.
+
+Verificado con el modelo real ya comiteado: reentrenar contra los
+mismos datos da un WAPE casi idéntico (20.78% vs. 20.79%) y se promueve
+por empate; comparar un modelo contra sí mismo también promueve
+(20.78% vs. 20.78%) — confirma que la comparación no rechaza por ruido
+de punto flotante ni bloquea reentrenamientos legítimos por defecto.
+
 ## Reproducibilidad
 
 Regenerar el modelo desde el API:
