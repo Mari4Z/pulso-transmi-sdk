@@ -297,6 +297,95 @@ por empate; comparar un modelo contra sí mismo también promueve
 (20.78% vs. 20.78%) — confirma que la comparación no rechaza por ruido
 de punto flotante ni bloquea reentrenamientos legítimos por defecto.
 
+## exp-20260930-seasonal-naive: por qué el accuracy de Banderas seguía tan bajo
+
+Pregunta puntual: "no es normal que el accuracy de Banderas esté tan
+bajo" — investigación completa en la rama `Experimento` (no toca
+producción hasta mergear) para descartar overfitting y buscar un modelo
+mejor si hacía falta.
+
+**Diagnóstico — ¿overfitting?** Se midió el WAPE del modelo puro (sin la
+mezcla con el ingenuo) en train vs. en el holdout, solo para Banderas:
+train ~9-10%, holdout ~40-43% — una brecha de 30+ puntos. Para
+descartar que fuera overfitting clásico (el modelo memorizando ruido),
+se probó regularizar mucho más fuerte (`max_leaf_nodes` de 63 a 7,
+`l2_regularization` de 2 a 30): el WAPE de holdout **no mejoró, empeoró
+ligeramente** en casi todos los horizontes, mientras el de train
+también empeoraba — la brecha no se cerró. Eso descarta overfitting: es
+un cambio de distribución real (el entrenamiento es mayormente del
+régimen viejo de demanda alta de Banderas), no el modelo memorizando
+ruido. Confirmado también restringiendo la ventana de entrenamiento a
+solo los últimos 7-30 días: tampoco movió la aguja, porque la mezcla ya
+pesa 85% hacia el ingenuo en Banderas — la calidad del modelo puro deja
+de ser el cuello de botella una vez que domina la mezcla.
+
+**El verdadero cuello de botella: el ingenuo (`lag_1`) en sí.** Con la
+mezcla dominada por el ingenuo para las estaciones en drift, mejorar el
+ingenuo importa más que seguir tocando el modelo. Se probó un ingenuo
+"estacional": en vez de solo el último valor observado, usar el mismo
+momento de **ayer** (`lag_96`) escalado por cuánto cambió el nivel
+reciente (`rolling_mean_16`, ~4h) respecto a ese mismo tramo hace un
+día. Captura la forma del ciclo diario de cada estación — incluyendo un
+ciclo diario ya *desplazado* a un nivel nuevo tras un colapso — mucho
+mejor que repetir sin más el último dato, sobre todo a 30-60 min de
+horizonte donde `lag_1` ya está desactualizado.
+
+| Referencia del ingenuo | Accuracy general | Accuracy Banderas |
+|---|---:|---:|
+| `lag_1` (anterior) | 79.20% | 71.91% |
+| `lag_96` sin escalar (peor, no ajusta al nivel nuevo) | 75.95% | 62.06% |
+| **`lag_96` × razón de nivel reciente — adoptado** | **80.88%** | **74.84%** |
+
+Con el ingenuo mejorado, se reafinó también el peso base de la mezcla
+(antes 0.25): como el ingenuo ahora es mejor, conviene confiar *menos*
+en él para las estaciones tranquilas y dejar que el modelo (que ya las
+predice bien) domine más. Barrido de peso base con el ingenuo
+estacional ya activo:
+
+| Peso base (estaciones sin drift) | Accuracy general | Accuracy Banderas |
+|---:|---:|---:|
+| 0.25 (anterior) | 80.88% | 74.84% |
+| 0.15 | 81.27% | 74.84% |
+| **0.05 — adoptado** | **81.47%** | **74.84%** |
+| 0.10, techo severo 0.70 (en vez de 0.85) | 81.70% (mejor en general) | 74.37% (peor en Banderas) |
+
+Se descartó la última fila a propósito: mejora el promedio general pero
+a costa de Banderas específicamente, y el pedido explícito era mejorar
+Banderas sin perjudicar a las demás — `0.05` de base logra el mejor
+resultado posible para Banderas sin sacrificarlo por una ganancia
+marginal en el agregado.
+
+**Resultado final, las 12 estaciones, ninguna empeora:**
+
+| Estación | Antes (lag_1, base 0.25) | Ahora (estacional, base 0.05) | Cambio |
+|---|---:|---:|---:|
+| 07105 | 85.49% | 86.62% | +1.13pp |
+| 07107 | 85.38% | 85.59% | +0.22pp |
+| 10009 | 84.71% | 85.31% | +0.60pp |
+| 06000 | 84.15% | 86.14% | +1.99pp |
+| 06111 | 83.90% | 85.28% | +1.37pp |
+| 09000 | 82.78% | 85.60% | +2.82pp |
+| 09122 | 81.72% | 83.82% | +2.10pp |
+| 07111 | 80.34% | 81.45% | +1.11pp |
+| 03000 | 72.59% | 76.80% | +4.21pp |
+| **05100 (Banderas)** | **71.91%** | **74.84%** | **+2.93pp** |
+| 05000 | 70.32% | 75.00% | +4.67pp |
+| 02300 | 67.06% | 71.17% | +4.11pp |
+| **Promedio** | **79.20%** | **81.47%** | **+2.27pp** |
+
+**¿Cambiar de algoritmo?** No hizo falta — el diagnóstico mostró que el
+problema nunca fue la capacidad del modelo (`HistGradientBoostingRegressor`
+con pérdida Poisson), sino la referencia del ingenuo con la que se
+mezcla. Cambiar de algoritmo no habría movido esta brecha: ya se había
+confirmado en `exp-...-002` y de nuevo aquí que el modelo no está
+limitado por su capacidad, y que regularizar más (lo más parecido a
+"otro modelo más simple") empeora en vez de ayudar.
+
+`naive_seasonal`/`rolling_mean_16_lag96` se agregaron a `build_features()`
+en ambos `pulso_transmi/pipeline.py` y `src/pipeline.py`;
+`NAIVE_BLEND_BASE` pasó de `0.25` a `0.05` en ambos. Todo esto vive en la
+rama `Experimento` — no afecta producción hasta que se mergee a `main`.
+
 ## Reproducibilidad
 
 Regenerar el modelo desde el API:

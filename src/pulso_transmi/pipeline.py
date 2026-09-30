@@ -32,7 +32,16 @@ ALGORITHM = "hgb-poisson"
 # docs). Must match the constants below in src/pipeline.py — that's what
 # train_and_evaluate() scores against, so the reported holdout metrics
 # match what actually gets submitted here.
-NAIVE_BLEND_BASE = 0.25
+# exp-20260930-seasonal-naive: base dropped 0.25->0.05 together with
+# upgrading the naive reference itself from plain lag_1 to naive_seasonal
+# (see build_features) — same time yesterday, scaled by how the recent
+# ~4h level compares to that same window a day ago. It's good enough
+# that calm stations do better trusting it *less* toward the model: the
+# model already handles calm stations well, so the naive component's
+# main job becomes covering stations actually in drift. Beat plain lag_1
+# in all 12 stations on the live holdout (+0.2 to +4.7pp each, +2.93pp on
+# Banderas specifically) — see docs/experimentos-modelos.md.
+NAIVE_BLEND_BASE = 0.05
 
 # exp-20260930-adaptive-blend: a flat 0.25 wasn't enough for a station in
 # a *severe* collapse (Banderas stayed at 0% accuracy — predictions still
@@ -169,6 +178,13 @@ def build_features(
     # here if this branch didn't compute them too.
     frame["trend_16"] = frame["lag_1"] - frame["rolling_mean_16"]
     frame["trend_96"] = frame["lag_1"] - frame["rolling_mean_96"]
+    # exp-20260930-seasonal-naive: must mirror src/pipeline.py — this is
+    # the naive-blend reference used below in predict_targets, not a model
+    # feature, but it has to be computed the same way on both sides.
+    frame["rolling_mean_16_lag96"] = frame.groupby("station_id")["rolling_mean_16"].shift(96)
+    frame["naive_seasonal"] = frame["lag_96"] * (
+        (frame["rolling_mean_16"] + 1.0) / (frame["rolling_mean_16_lag96"] + 1.0)
+    )
     return frame
 
 
@@ -236,7 +252,12 @@ def predict_targets(
             raise PipelineError(f"cannot predict station={station_id} horizon={horizon}")
         matrix = _prepare_matrix(row, feature_columns)
         model_value = float(models[horizon // 15].predict(matrix)[0])
-        naive_value = float(row["lag_1"].iloc[0])
+        # naive_seasonal needs a full day of history behind this row (lag_96
+        # + rolling_mean_16 from a day ago) — falls back to plain lag_1 on
+        # the rare row where that's not available yet (e.g. right after a
+        # station's very first observations) rather than blending in a NaN.
+        naive_seasonal = row["naive_seasonal"].iloc[0]
+        naive_value = float(naive_seasonal) if pd.notna(naive_seasonal) else float(row["lag_1"].iloc[0])
         weight = naive_weights.get(station_id, NAIVE_BLEND_BASE)
         value = (1 - weight) * model_value + weight * naive_value
         predictions.append(

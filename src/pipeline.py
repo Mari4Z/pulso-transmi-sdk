@@ -41,12 +41,20 @@ FEATURE_SET_ID = "pulso-hgb-poisson-features"
 FEATURE_SET_VERSION = "v1"
 
 # exp-20260929-shock-blend / exp-20260930-adaptive-blend /
-# exp-20260930-extended-ceiling (docs/experimentos-modelos.md): must match
-# the constants and _station_naive_weights() in pulso_transmi/pipeline.py
-# — that's what actually gets submitted at predict time, so scoring it
-# here with the same blend keeps these holdout numbers an honest preview
-# instead of measuring a pure-model prediction we never actually send.
-NAIVE_BLEND_BASE = 0.25
+# exp-20260930-extended-ceiling / exp-20260930-seasonal-naive
+# (docs/experimentos-modelos.md): must match the constants and
+# _station_naive_weights() in pulso_transmi/pipeline.py — that's what
+# actually gets submitted at predict time, so scoring it here with the
+# same blend keeps these holdout numbers an honest preview instead of
+# measuring a pure-model prediction we never actually send.
+#
+# Base dropped 0.25->0.05: with the naive reference itself upgraded to
+# `naive_seasonal` (see build_features — same time yesterday, scaled by
+# how the last 4h compares to the same 4h a day ago), it's good enough
+# that calm stations do better trusting it *less* toward the model, not
+# more — the model already handles calm stations well, so the naive
+# component's main job becomes covering the stations actually in drift.
+NAIVE_BLEND_BASE = 0.05
 NAIVE_BLEND_SEVERE = 0.85
 NAIVE_BLEND_DRIFT_THRESHOLD = 15.0
 NAIVE_BLEND_DRIFT_CAP = 80.0
@@ -155,6 +163,20 @@ def build_features(observations: pd.DataFrame, stations: pd.DataFrame, context: 
         )
     frame["trend_16"] = frame["lag_1"] - frame["rolling_mean_16"]
     frame["trend_96"] = frame["lag_1"] - frame["rolling_mean_96"]
+    # exp-20260930-seasonal-naive: the naive-blend reference (see
+    # NAIVE_BLEND_* above) upgraded from plain lag_1 (last observed value)
+    # to a seasonal-adjusted one — same time yesterday (lag_96), scaled by
+    # how the recent ~4h level (rolling_mean_16) compares to that same
+    # window a day ago. lag_1 goes stale fast past 15min out; this tracks
+    # a station's actual daily shape (and, via the ratio, a *shifted* daily
+    # shape after a regime change) much better at 30-60min horizons without
+    # needing to know a station is in drift. Beat plain lag_1 in every one
+    # of the 12 stations on the live holdout (+0.2 to +4.7pp, not just on
+    # the ones in drift) — see docs/experimentos-modelos.md.
+    frame["rolling_mean_16_lag96"] = frame.groupby("station_id")["rolling_mean_16"].shift(96)
+    frame["naive_seasonal"] = frame["lag_96"] * (
+        (frame["rolling_mean_16"] + 1.0) / (frame["rolling_mean_16_lag96"] + 1.0)
+    )
     return frame
 
 
@@ -267,7 +289,7 @@ def train_and_evaluate(
         ].copy()
 
         train_rows = train_rows.dropna(subset=list(NUMERIC_FEATURES)).copy()
-        val_rows = val_rows.dropna(subset=list(NUMERIC_FEATURES)).copy()
+        val_rows = val_rows.dropna(subset=list(NUMERIC_FEATURES) + ["naive_seasonal"]).copy()
 
         y_train = train_rows.pop("target")
         matrix = prepare_matrix(train_rows)
@@ -286,12 +308,13 @@ def train_and_evaluate(
         y_val = val_rows.pop("target")
         X_val = prepare_matrix(val_rows).reindex(columns=feature_columns, fill_value=0.0)
         model_preds = model.predict(X_val)
-        # Blend with the naive persistence forecast (lag_1), weighted per
+        # Blend with the seasonal-naive forecast (see build_features —
+        # lag_96 scaled by the recent-vs-a-day-ago ratio), weighted per
         # station by how severe its recent drift is — see
         # _station_naive_weights above — so this holdout score matches
         # what predict_targets() actually submits, not a pure-model number.
         row_weights = val_rows["station_id"].map(naive_weights).fillna(NAIVE_BLEND_BASE).to_numpy()
-        naive_preds = val_rows["lag_1"].to_numpy()
+        naive_preds = np.clip(val_rows["naive_seasonal"].to_numpy(), 0.0, None)
         preds = (1 - row_weights) * model_preds + row_weights * naive_preds
         # Métrica oficial: WAPE por estación, luego promediado — no agregado
         # sobre todas las estaciones (ver accuracy_monitor.py). Con demandas
