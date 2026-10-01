@@ -60,6 +60,31 @@ def _is_severe(row: dict) -> bool:
     return bool(row["drift_detected"] and abs(row["mean_change_pct"] or 0) >= SEVERE_MEAN_CHANGE_PCT)
 
 
+def _download_observations(base_url: str, attempts: int = 3) -> pd.DataFrame:
+    """A timed-out fetch here used to silently skip the whole drift check —
+    main()'s top-level try/except swallows it so the job still reports
+    "success" to GitHub Actions, but nothing gets measured or written, and
+    severe_drift never gets set (steps.drift.outputs.severe_drift stays
+    unset, so the retrain trigger step just doesn't fire). With hourly
+    checks that self-healed next cycle; now that this runs every 30 min
+    during an actual drift event (see docs/experimentos-modelos.md), one
+    timeout can mean 30+ minutes of flying blind on a live shock. Retry
+    before giving up."""
+    last_exc: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            with PulsoTransmiClient(base_url=base_url, timeout=60) as client:
+                # observations_dataframe() sola nunca avanza más allá del
+                # histórico estático (45 días fijos); sin el stream en vivo,
+                # "reciente" acá terminaría siendo el mismo tramo viejo de
+                # siempre, no lo actual.
+                return client.all_observations_dataframe(page_size=5000)
+        except Exception as exc:
+            last_exc = exc
+            print(f"  intento {attempt}/{attempts} falló ({exc}); reintentando...")
+    raise RuntimeError(f"no se pudieron descargar observaciones tras {attempts} intentos") from last_exc
+
+
 def main() -> None:
     print("Iniciando monitor de drift...")
     print("Descargando observaciones...")
@@ -67,11 +92,7 @@ def main() -> None:
     # variable exists but empty when unconfigured, and getenv's own default
     # only kicks in when the key is absent entirely.
     base_url = os.environ.get("PULSO_API_URL") or DEFAULT_BASE_URL
-    with PulsoTransmiClient(base_url=base_url, timeout=60) as client:
-        # observations_dataframe() sola nunca avanza más allá del histórico
-        # estático (45 días fijos); sin el stream en vivo, "reciente" acá
-        # terminaría siendo el mismo tramo viejo de siempre, no lo actual.
-        observations = client.all_observations_dataframe(page_size=5000)
+    observations = _download_observations(base_url)
 
     if observations.empty:
         print("No hay suficientes datos para drift.")
