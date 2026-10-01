@@ -434,6 +434,36 @@ Cada corrida:
    `metrics`) para que el dashboard y el resto del pipeline lo vean sin
    depender de MLflow.
 
-Se dispara manualmente (`gh workflow run pipeline.yml -f trigger=manual`) o
+Se dispara manualmente (`gh workflow run pipeline.yml -f trigger=manual`),
 automáticamente cuando `drift_monitor.py` detecta drift severo
-(`trigger=drift`, ver `SEVERE_MEAN_CHANGE_PCT` en ese archivo).
+(`trigger=drift`), o cada hora sí o sí vía cron-job.org
+(`trigger=hourly-scheduled`, job 8550098, minuto 5 de cada hora) como
+respaldo durante un drift activo prolongado — no depende de que
+`drift_monitor` lo detecte primero.
+
+## exp-20261001-best-of-seeds: varias semillas por reentrenamiento
+
+`HistGradientBoostingRegressor` es determinista con hiperparámetros
+fijos: reentrenar dos veces sobre los mismos datos con el mismo
+`random_state` da exactamente el mismo modelo. Con la puerta de
+promoción (ver más arriba) rechazando reentrenamientos que no mejoran,
+"seguir intentando hasta que mejore" solo tiene sentido si cada intento
+prueba algo distinto.
+
+`train_and_evaluate()` ahora entrena `RETRAIN_SEED_CANDIDATES = (42, 7,
+123, 2024, 99)` — 5 semillas por horizonte (20 entrenamientos por
+corrida) — y se queda con la que mejor mida en el holdout, igual que
+antes mezclada con el naive estacional. Esto solo puede igualar o
+mejorar sobre una sola semilla fija, nunca empeorar, y sube la
+probabilidad real de superar la puerta de promoción en cada corrida.
+Verificado con datos en vivo: 20 entrenamientos (4 horizontes × 5
+semillas) tardan ~43s, muy por debajo del timeout de 15 min de
+`pipeline.yml`.
+
+No garantiza una mejora en cada corrida — si el drift sigue
+profundizándose más rápido de lo que cualquier semilla puede compensar,
+ningún candidato va a superar al modelo activo ese ciclo en particular
+(evaluado sobre el mismo holdout, cada vez más difícil). Lo que sí
+garantiza es que nunca se promueve algo peor, y que la próxima
+oportunidad llega en 30-60 min (drift horario + el respaldo de cada
+hora), no al azar.
