@@ -1,5 +1,5 @@
 {
-  "model_version": "hgb-poisson-20261001T143202Z",
+  "model_version": "hgb-poisson-20261001T144506Z",
   "model": "HistGradientBoostingRegressor",
   "loss": "poisson",
   "parameters": {
@@ -17,7 +17,7 @@
   ],
   "dataset": "pulso-transmi-starter-v1",
   "training_cutoff": "2026-09-11T21:30:00+00:00",
-  "created_at": "2026-10-01T14:32:02.977255+00:00",
+  "created_at": "2026-10-01T14:45:06.969338+00:00",
   "feature_columns": [
     "latitude",
     "longitude",
