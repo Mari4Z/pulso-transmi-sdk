@@ -131,6 +131,13 @@ y los entregables.
 La guía de envío de predicciones está en
 [docs/submissions.md](docs/submissions.md).
 
+La estrategia de monitoreo y reentrenamiento ante drift — qué dispara una
+evaluación, cómo se compara una versión nueva contra la activa antes de
+promoverla, y qué evidencia respalda cada decisión — está en
+[docs/estrategia-drift.md](docs/estrategia-drift.md), con el detalle
+experimento por experimento en
+[docs/experimentos-modelos.md](docs/experimentos-modelos.md).
+
 ## Métrica
 
 La referencia actual es:
