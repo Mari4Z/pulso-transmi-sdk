@@ -102,6 +102,17 @@ class CycleClosedError(PipelineError):
     is open next."""
 
 
+class AlreadySubmittedError(PipelineError):
+    """The API already accepted a submission for this cycle under a
+    different idempotency key — found live during the stronger drift
+    wave (docs/estrategia-drift.md): cycles now outlast the 10-min predict
+    cadence, so a later run in the same still-open cycle recomputes
+    slightly different predictions (fresh observations moved lag_1/
+    naive_seasonal) and gets a 409 trying to resubmit. The API's contract
+    is one accepted submission per cycle; this is that contract working
+    as intended, not a bug — nothing more to do this cycle."""
+
+
 def _git_commit() -> str:
     value = os.getenv("GITHUB_SHA")
     if value:
@@ -329,6 +340,10 @@ def submit(
             code = None
         if code == "cycle_closed":
             raise CycleClosedError(f"cycle {cycle['cycle_id']} closed before submission: {response.text[:500]}")
+        if code == "idempotency_conflict":
+            raise AlreadySubmittedError(
+                f"cycle {cycle['cycle_id']} already has an accepted submission: {response.text[:500]}"
+            )
     if response.status_code not in (200, 201):
         raise PipelineError(f"POST /v1/submissions failed with HTTP {response.status_code}: {response.text[:500]}")
     return {"idempotency_key": idempotency_key, "response": response.json()}
@@ -417,6 +432,14 @@ def main() -> None:
             result = submit(base_url, api_key, cycle, model_metadata, predictions, http_client)
         except CycleClosedError as exc:
             print(f"ciclo cerrado antes de poder enviar, se omite este ciclo: {exc}")
+            return
+        except AlreadySubmittedError as exc:
+            # No se reintenta con un idempotency key distinto: la API ya
+            # aceptó una respuesta para este ciclo (de una corrida anterior
+            # dentro del mismo ciclo, todavía abierto) y esa es la que se
+            # califica — no record_predictions() aquí, porque guardaríamos
+            # una predicción que nunca se envió de verdad.
+            print(f"este ciclo ya tiene una submission aceptada, se omite: {exc}")
             return
     record_predictions(cycle.get("targets", []), predictions)
     receipt = {
