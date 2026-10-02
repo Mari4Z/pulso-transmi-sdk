@@ -48,13 +48,18 @@ FEATURE_SET_VERSION = "v1"
 # same blend keeps these holdout numbers an honest preview instead of
 # measuring a pure-model prediction we never actually send.
 #
-# Base dropped 0.25->0.05: with the naive reference itself upgraded to
-# `naive_seasonal` (see build_features — same time yesterday, scaled by
-# how the last 4h compares to the same 4h a day ago), it's good enough
-# that calm stations do better trusting it *less* toward the model, not
-# more — the model already handles calm stations well, so the naive
-# component's main job becomes covering the stations actually in drift.
-NAIVE_BLEND_BASE = 0.05
+# exp-20261002-base-raised: 0.05 was right while most stations were calm
+# and only a few were in active drift (the model handled calm stations
+# well on its own then). Now 12/12 stations show drift_detected — there
+# is no "calm" station left for a low base to help, and with demand
+# settling into a real daily rhythm again, naive_seasonal alone (even at
+# weight 1.0) beats the trained model alone by a wide margin in the most
+# recent data (model trained mostly on the pre-shock regime is still the
+# worst predictor of the three). Swept base 0.05->0.75 against the live
+# holdout: 0.65 keeps the full 7-day holdout almost flat (66.04%->65.64%)
+# while recovering sharply in the windows that matter right now (last 24h
+# 44.54%->48.88%, last 6h 43.22%->50.02%). See docs/experimentos-modelos.md.
+NAIVE_BLEND_BASE = 0.65
 NAIVE_BLEND_SEVERE = 0.85
 NAIVE_BLEND_DRIFT_THRESHOLD = 15.0
 NAIVE_BLEND_DRIFT_CAP = 80.0

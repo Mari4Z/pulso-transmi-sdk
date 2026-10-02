@@ -41,7 +41,15 @@ ALGORITHM = "hgb-poisson"
 # main job becomes covering stations actually in drift. Beat plain lag_1
 # in all 12 stations on the live holdout (+0.2 to +4.7pp each, +2.93pp on
 # Banderas specifically) — see docs/experimentos-modelos.md.
-NAIVE_BLEND_BASE = 0.05
+#
+# exp-20261002-base-raised: raised 0.05->0.65 once 12/12 stations showed
+# drift_detected — no "calm" station left for a low base to protect, and
+# with demand back in a real (if shifted) daily rhythm, naive_seasonal
+# alone beats the trained model alone by a wide margin on the most recent
+# data. 0.65 keeps the full 7-day holdout nearly flat (66.04%->65.64%)
+# while recovering sharply where it counts right now (last 6h:
+# 43.22%->50.02%). See docs/experimentos-modelos.md.
+NAIVE_BLEND_BASE = 0.65
 
 # exp-20260930-adaptive-blend: a flat 0.25 wasn't enough for a station in
 # a *severe* collapse (Banderas stayed at 0% accuracy — predictions still

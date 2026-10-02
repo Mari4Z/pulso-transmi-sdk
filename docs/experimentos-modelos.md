@@ -467,3 +467,35 @@ ningún candidato va a superar al modelo activo ese ciclo en particular
 garantiza es que nunca se promueve algo peor, y que la próxima
 oportunidad llega en 30-60 min (drift horario + el respaldo de cada
 hora), no al azar.
+
+## exp-20261002-base-raised: el peso base ya no protegía nada
+
+Mientras el drift era severo en solo 4-10 de 12 estaciones, un peso base
+bajo (0.05) tenía sentido: protegía a las estaciones tranquilas, donde el
+modelo ya predecía bien por su cuenta. El 2 de octubre, con las **12
+estaciones** mostrando `drift_detected=true` simultáneamente y varios
+estudiantes ya recuperados a 80-93% mientras nosotros seguíamos en ~43%,
+se investigó si ese peso base seguía siendo el correcto.
+
+Comparando contra el holdout real: el modelo puro (peso 0.0, solo el
+modelo entrenado) daba 31.52% de accuracy en las últimas 6h — peor que el
+ingenuo estacional puro (peso 1.0), que daba 52.01%. El modelo, entrenado
+mayormente con datos del régimen previo al shock, se había vuelto el peor
+de los tres predictores disponibles, no el mejor. Ya no había ninguna
+estación "tranquila" que proteger con un peso bajo.
+
+| Peso base | Accuracy holdout completo (7d) | Accuracy últimas 24h | Accuracy últimas 6h |
+|---:|---:|---:|---:|
+| 0.05 (anterior) | 66.04% | 44.54% | 43.22% |
+| 0.40 | 66.26% | 47.73% | 47.64% |
+| 0.55 | 65.96% | 48.57% | 49.16% |
+| **0.65 — adoptado** | **65.64%** | **48.88%** | **50.02%** |
+| 0.75 | 65.22% | 49.03% | 50.71% |
+
+0.75 da un poco más en las ventanas recientes, pero 0.65 fue el punto
+elegido: casi no cuesta nada en el holdout completo (-0.4pp) y ya captura
+la mayor parte de la recuperación disponible en las ventanas que importan
+ahora mismo. `NAIVE_BLEND_BASE` pasó de `0.05` a `0.65` en ambos
+`pulso_transmi/pipeline.py` y `src/pipeline.py`. El resto de la fórmula
+(techo 0.85, saturación en 80% de cambio) no se tocó — sigue siendo el
+punto correcto para las estaciones en colapso más extremo.
