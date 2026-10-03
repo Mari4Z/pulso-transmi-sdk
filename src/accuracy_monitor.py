@@ -76,6 +76,8 @@ def _actual_demand_by_key(supabase: Client, station_ids: list[str], min_at: str,
         if not page:
             break
         for row in page:
+            if row["demand"] is None:
+                continue  # missing truth is not zero demand — don't score against it
             lookup[(row["station_id"], row["observed_at"])] = row["demand"]
         if len(page) < PAGE_SIZE:
             break

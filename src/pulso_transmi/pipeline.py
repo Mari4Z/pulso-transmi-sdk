@@ -254,7 +254,12 @@ def predict_targets(
     feature_frame = build_features(observations, stations, context)
     cutoff = pd.Timestamp(cycle["data_cutoff"], tz="UTC")
     available = feature_frame[feature_frame["observed_at"] <= cutoff]
-    latest = available.groupby("station_id", as_index=False).tail(1)
+    # The last row per station can be a missing (NaN) measurement from the
+    # v2 contract, and its lag/rolling features are then NaN too. Take the
+    # most recent row where every feature the prediction uses is finite
+    # instead — a slightly older honest row beats a NaN or a fabricated zero.
+    complete = available.dropna(subset=["lag_1", "lag_672", "rolling_mean_672", "naive_seasonal"])
+    latest = complete.groupby("station_id", as_index=False).tail(1)
     latest = add_training_statistics(latest, available)
     if latest["station_id"].nunique() != len(stations):
         raise PipelineError("missing latest observations for one or more stations")

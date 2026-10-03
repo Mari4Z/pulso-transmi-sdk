@@ -125,6 +125,20 @@ class PulsoTransmiClient:
             frame["station_id"] = frame["station_id"].astype("string")
         return frame
 
+    @staticmethod
+    def _normalize_stream_row(row: dict[str, Any]) -> dict[str, Any]:
+        """Contract v2 (fase final, docs/fase-final.md) drops the flat `demand`
+        field and nests the value under measurement.value as a decimal string,
+        or null when quality is "missing". A missing value is NaN here — never
+        zero — so downstream code can tell it apart from a real zero demand."""
+        if "measurement" not in row:
+            return row
+        measurement = row.get("measurement") or {}
+        value = measurement.get("value")
+        normalized = {k: v for k, v in row.items() if k not in ("measurement", "schema_version")}
+        normalized["demand"] = float(value) if value is not None else float("nan")
+        return normalized
+
     def stream_observations_dataframe(self, *, page_size: int = 5000) -> pd.DataFrame:
         """The live feed (/v1/stream/observations): observations released
         after the static 45-day history_end, up through each forecast
@@ -132,7 +146,7 @@ class PulsoTransmiClient:
         past history_end — this is the only source for anything newer, and
         predict-time feature building needs it merged in or every "latest"
         row is stuck days behind the cycle being predicted."""
-        rows = list(self._all_pages("/v1/stream/observations", {"limit": page_size}))
+        rows = [self._normalize_stream_row(r) for r in self._all_pages("/v1/stream/observations", {"limit": page_size})]
         frame = pd.DataFrame(rows)
         if not frame.empty:
             frame["observed_at"] = pd.to_datetime(frame["observed_at"], utc=True)
