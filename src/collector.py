@@ -23,6 +23,12 @@ def _upsert(supabase: Client, observations: pd.DataFrame) -> int:
     frame = observations.copy()
     frame["observed_at"] = frame["observed_at"].dt.strftime("%Y-%m-%dT%H:%M:%S%z")
     frame["dataset_version"] = DATASET_VERSION
+    if "demand" in frame.columns:
+        demand = frame["demand"].astype("float64")
+        fractional = demand.dropna()[demand.dropna() != demand.dropna().round()]
+        if not fractional.empty:
+            raise ValueError(f"demanda con decimales no soportada por observations.demand: {fractional.iloc[0]}")
+        frame["demand"] = demand.round().astype("Int64")
     frame = frame.where(pd.notnull(frame), None)
     records = frame.to_dict(orient="records")
     supabase.table("observations").upsert(records, on_conflict="station_id,observed_at").execute()
