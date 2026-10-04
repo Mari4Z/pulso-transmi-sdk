@@ -254,11 +254,12 @@ def predict_targets(
     feature_frame = build_features(observations, stations, context)
     cutoff = pd.Timestamp(cycle["data_cutoff"], tz="UTC")
     available = feature_frame[feature_frame["observed_at"] <= cutoff]
-    # The last row per station can be a missing (NaN) measurement from the
-    # v2 contract, and its lag/rolling features are then NaN too. Take the
-    # most recent row where every feature the prediction uses is finite
-    # instead — a slightly older honest row beats a NaN or a fabricated zero.
-    complete = available.dropna(subset=["lag_1", "lag_672", "rolling_mean_672", "naive_seasonal"])
+    # A missing (NaN) measurement from the v2 contract makes lag_1 NaN for
+    # one step, and every rolling mean NaN for its whole window (7 days for
+    # the longest). Require only lag_1: one gap then costs one step instead
+    # of freezing a station's prediction. Features that remain NaN are
+    # handled natively by the model, and naive_seasonal falls back to lag_1.
+    complete = available.dropna(subset=["lag_1"])
     latest = complete.groupby("station_id", as_index=False).tail(1)
     latest = add_training_statistics(latest, available)
     if latest["station_id"].nunique() != len(stations):
