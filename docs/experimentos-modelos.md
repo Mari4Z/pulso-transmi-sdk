@@ -499,3 +499,50 @@ ahora mismo. `NAIVE_BLEND_BASE` pasó de `0.05` a `0.65` en ambos
 `pulso_transmi/pipeline.py` y `src/pipeline.py`. El resto de la fórmula
 (techo 0.85, saturación en 80% de cambio) no se tocó — sigue siendo el
 punto correcto para las estaciones en colapso más extremo.
+## exp-20261003-busqueda-95: ronda de experimentos hacia 95% (sin éxito)
+
+Objetivo solicitado: accuracy de 95%. Todas las mediciones usan el mismo
+holdout de 7 días (último corte `cutoff = validation_end − 7 días`) y la
+misma métrica oficial (WAPE por estación, promediado; accuracy = 1 − WAPE).
+Ninguna variante probada alcanza 95%; el mejor promedio en holdout fue
+~65%, y en las últimas 24 h ~51%.
+
+| Familia probada | Holdout (7 d) | Últimas 24 h |
+|---|---:|---:|
+| HGB actual (producción) | 64.2% | 51.4% |
+| HGB residual (y − lag_1) | 62.9% sin mezcla / 65.2% con mezcla | — |
+| CatBoost directo (Poisson) | 65.6% con mezcla | — |
+| CatBoost residual | 65.0% con mezcla | — |
+| ExtraTrees | 64.9% sin mezcla | — |
+| Ensamble (CatBoost + HGB residual + ExtraTrees) | 64.1% | 50.0% |
+| GRU sobre 24 h (6 épocas, una semilla) | 51.6% sin mezcla | — |
+| HGB por estación (12 modelos) | 64.5% | — |
+| Mezcla con peso aprendido fuera de muestra | 44.8% (sobre 2 días) | — |
+| Mejor peso fijo mirando la prueba (techo optimista) | 46.5% (sobre 2 días) | — |
+| Variantes del naive (sin escalar, ratio^0.5, media de 3 días, lag_1) | 59.5%–64.2% | 39.0%–51.5% |
+| Features de cruce entre estaciones (sistema, demás estaciones) | 64.2% | 51.5% |
+
+Diagnósticos que sí aclaran algo:
+
+- **Persistencia como referencia.** Repetir el valor observado en el corte
+  saca 78% a 15 min, 61% a 30, 43% a 45 y 29% a 60; el total de las últimas 24 h
+  es 52.8%. El modelo actual está a la altura de esa referencia, no por encima.
+- **Alineación temporal.** Las predicciones en producción coinciden mejor con
+  el valor del corte que con el del objetivo, pero la matriz de features que
+  recibe el modelo en producción es idéntica a la de entrenamiento para la misma
+  fila (verificado fila por fila). La serie por estación es continua cada 15 min,
+  sin huecos ni duplicados. El desfase es que el modelo predice casi el presente,
+  no un fallo de datos.
+- **Prueba de corte pasado con pesos de hoy.** Un error de prueba inicial usó el
+  peso de drift actual para un corte pasado y dio 36%; no es un bug de producción.
+- **Métrica del leaderboard.** `accuracy` coincide con 1 − `raw_wape` (con un
+  pequeño ajuste por estación). Los participantes de 90%+ tienen WAPE ~9%; un
+  predictor de persistencia legítimo está en ~47% de WAPE. Esa brecha no se
+  explica con información disponible hasta el corte, por lo que queda como
+  pregunta abierta sobre la métrica o la ventana de evaluación, no como una
+  mejora del modelo.
+
+Conclusión: no hay una familia de modelos ni una mezcla con datos permitidos que
+llegue a 95% en este holdout. La documentación de la rúbrica (`docs/estrategia-drift.md`)
+sigue siendo válida para el monitoreo y la decisión de promoción; esta ronda
+registra los resultados negativos para que la evidencia esté completa.
