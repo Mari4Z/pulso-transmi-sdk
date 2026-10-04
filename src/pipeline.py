@@ -333,7 +333,9 @@ def train_and_evaluate(
         # _station_naive_weights above — so this holdout score matches
         # what predict_targets() actually submits, not a pure-model number.
         row_weights = val_rows["station_id"].map(naive_weights).fillna(NAIVE_BLEND_BASE).to_numpy()
-        naive_preds = np.clip(val_rows["naive_seasonal"].to_numpy(), 0.0, None)
+        low, high = (0.7, 1.5)
+        l1 = val_rows["lag_1"].to_numpy()
+        naive_preds = np.clip(val_rows["naive_seasonal"].to_numpy(), low * l1, high * l1)
 
         # exp-20261001-best-of-seeds: during an active, still-worsening
         # drift, retraining once with a fixed random_state is deterministic
