@@ -415,6 +415,21 @@ def record_predictions(
         print(f"Advertencia: no se pudieron registrar las predicciones en Supabase: {exc}")
 
 
+def _with_retries(label: str, fn, attempts: int = 3):
+    """A single ConnectTimeout used to cost a whole cycle: main() had no retry
+    around these calls. Retry transport errors only — HTTP errors (4xx/5xx)
+    are real answers and propagate. Safe for submit(): it sends a stable
+    Idempotency-Key, so a retry after a lost response can't double-submit."""
+    last: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return fn()
+        except httpx.TransportError as exc:
+            last = exc
+            print(f"{label}: intento {attempt}/{attempts} falló ({exc}); reintentando...")
+    raise PipelineError(f"{label}: sin respuesta tras {attempts} intentos") from last
+
+
 def main() -> None:
     api_key = os.environ.get("PULSO_API_KEY")
     if not api_key:
@@ -429,7 +444,7 @@ def main() -> None:
         # A single check per run: the caller (cron-job.org / workflow_dispatch)
         # is expected to trigger this pipeline every few minutes, so we don't
         # need to block the job waiting for a cycle to open.
-        cycle = get_current_cycle(base_url, api_key, http_client)
+        cycle = _with_retries("ciclo vigente", lambda: get_current_cycle(base_url, api_key, http_client))
         if cycle is None:
             print("no open forecast cycle")
             return
@@ -442,7 +457,7 @@ def main() -> None:
             context = client.context_dataframe(page_size=5000)
         predictions = predict_targets(cycle, observations, stations, context, package)
         try:
-            result = submit(base_url, api_key, cycle, model_metadata, predictions, http_client)
+            result = _with_retries("submit", lambda: submit(base_url, api_key, cycle, model_metadata, predictions, http_client))
         except CycleClosedError as exc:
             print(f"ciclo cerrado antes de poder enviar, se omite este ciclo: {exc}")
             return
